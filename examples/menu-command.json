@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "automationEnabled": false,
+  "allowScripts": false,
+  "launchAtLogin": false,
+  "rules": [
+    {
+      "id": "10000000-0000-4000-8000-000000000031",
+      "name": "TextEdit New through exact English menu titles",
+      "enabled": false,
+      "group": "Examples",
+      "cooldown": 1,
+      "conditions": {
+        "appBundleIdentifiers": ["com.apple.TextEdit"],
+        "excludedAppBundleIdentifiers": []
+      },
+      "trigger": {
+        "kind": "shortcut",
+        "keyCode": 45,
+        "modifiers": 786432,
+        "mouseButton": 2,
+        "scrollDirection": "up",
+        "intervalSeconds": 60,
+        "appBundleIdentifier": ""
+      },
+      "actions": [
+        {
+          "id": "20000000-0000-4000-8000-000000000031",
+          "kind": "menuCommand",
+          "text": "[\"File\",\"New\"]",
+          "keyCode": 0,
+          "modifiers": 1048576,
+          "windowOperation": "leftHalf",
+          "delaySeconds": 1
+        }
+      ]
+    }
+  ]
+}

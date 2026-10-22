@@ -1,0 +1,16 @@
+.build/
+.build-arm64/
+.build-x86_64/
+.swiftpm/
+dist/
+.DS_Store
+*.xcuserstate
+*.dmg
+*.zip
+__pycache__/
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx

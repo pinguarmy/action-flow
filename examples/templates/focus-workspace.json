@@ -1,0 +1,78 @@
+{
+  "allowScripts" : false,
+  "automationEnabled" : false,
+  "launchAtLogin" : false,
+  "rules" : [
+    {
+      "actions" : [
+        {
+          "delaySeconds" : 1,
+          "id" : "47465450-0003-0001-8000-000000000001",
+          "keyCode" : 0,
+          "kind" : "window",
+          "modifiers" : 1048576,
+          "text" : "",
+          "windowOperation" : "maximize"
+        }
+      ],
+      "conditions" : {
+        "appBundleIdentifiers" : [
+
+        ],
+        "excludedAppBundleIdentifiers" : [
+
+        ]
+      },
+      "cooldown" : 0.5,
+      "enabled" : false,
+      "group" : "Built-in templates",
+      "id" : "47465450-0003-0001-8000-000000000000",
+      "name" : "Maximize focused window",
+      "trigger" : {
+        "appBundleIdentifier" : "",
+        "intervalSeconds" : 60,
+        "keyCode" : 36,
+        "kind" : "shortcut",
+        "modifiers" : 786432,
+        "mouseButton" : 2,
+        "scrollDirection" : "up"
+      }
+    },
+    {
+      "actions" : [
+        {
+          "delaySeconds" : 1,
+          "id" : "47465450-0003-0002-8000-000000000001",
+          "keyCode" : 0,
+          "kind" : "window",
+          "modifiers" : 1048576,
+          "text" : "",
+          "windowOperation" : "center"
+        }
+      ],
+      "conditions" : {
+        "appBundleIdentifiers" : [
+
+        ],
+        "excludedAppBundleIdentifiers" : [
+
+        ]
+      },
+      "cooldown" : 0.5,
+      "enabled" : false,
+      "group" : "Built-in templates",
+      "id" : "47465450-0003-0002-8000-000000000000",
+      "name" : "Center focused window",
+      "trigger" : {
+        "appBundleIdentifier" : "",
+        "intervalSeconds" : 60,
+        "keyCode" : 8,
+        "kind" : "shortcut",
+        "modifiers" : 786432,
+        "mouseButton" : 2,
+        "scrollDirection" : "up"
+      }
+    }
+  ],
+  "schemaVersion" : 1
+}

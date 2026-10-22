@@ -1,0 +1,43 @@
+{
+  "allowScripts" : false,
+  "automationEnabled" : false,
+  "launchAtLogin" : false,
+  "rules" : [
+    {
+      "actions" : [
+        {
+          "delaySeconds" : 1,
+          "id" : "47465450-0006-0001-8000-000000000001",
+          "keyCode" : 0,
+          "kind" : "notification",
+          "modifiers" : 1048576,
+          "text" : "A gentle reminder to take a short break.",
+          "windowOperation" : "leftHalf"
+        }
+      ],
+      "conditions" : {
+        "appBundleIdentifiers" : [
+
+        ],
+        "excludedAppBundleIdentifiers" : [
+
+        ]
+      },
+      "cooldown" : 1800,
+      "enabled" : false,
+      "group" : "Built-in templates",
+      "id" : "47465450-0006-0001-8000-000000000000",
+      "name" : "Take a short break",
+      "trigger" : {
+        "appBundleIdentifier" : "",
+        "intervalSeconds" : 1800,
+        "keyCode" : 0,
+        "kind" : "interval",
+        "modifiers" : 786432,
+        "mouseButton" : 2,
+        "scrollDirection" : "up"
+      }
+    }
+  ],
+  "schemaVersion" : 1
+}

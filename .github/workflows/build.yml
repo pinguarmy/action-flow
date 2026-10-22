@@ -1,0 +1,78 @@
+name: Build and test
+on:
+  push:
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+permissions:
+  contents: read
+jobs:
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            architecture: arm64
+          - runner: macos-15-intel
+            architecture: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: swift --version
+      - name: Unit tests
+        run: swift test
+      - name: Core behavior harness
+        run: swift run ActionFlowChecks
+      - name: Offline CLI checks
+        run: bash scripts/check-cli.sh
+      - name: Localization resource checks
+        run: python3 scripts/check-localization.py
+      - name: Runtime checks without desktop actions
+        run: bash scripts/check-runtime.sh
+      - name: English native state and offscreen rendering
+        env:
+          ACTIONFLOW_LANGUAGE: en
+        run: bash scripts/check-app.sh "$RUNNER_TEMP/editor-en.png"
+      - name: Chinese native state and offscreen rendering
+        env:
+          ACTIONFLOW_LANGUAGE: zh-Hans
+          ACTIONFLOW_PREVIEW_IMAGE: ${{ runner.temp }}/preview-zh-Hans.png
+          ACTIONFLOW_APPEARANCE: dark
+          ACTIONFLOW_RENDER_WIDTH: "1220"
+          ACTIONFLOW_RENDER_HEIGHT: "680"
+          ACTIONFLOW_READONLY_IMAGE: ${{ runner.temp }}/readonly-dark-zh-Hans.png
+          ACTIONFLOW_LAB_IMAGE: ${{ runner.temp }}/gesture-lab-zh-Hans.png
+          ACTIONFLOW_MENU_IMAGE: ${{ runner.temp }}/menu-command-zh-Hans.png
+        run: bash scripts/check-app.sh "$RUNNER_TEMP/editor-zh-Hans.png"
+      - name: Preserve native render evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: ActionFlow-render-${{ matrix.architecture }}
+          path: |
+            ${{ runner.temp }}/editor-en.png
+            ${{ runner.temp }}/editor-zh-Hans.png
+            ${{ runner.temp }}/readonly-dark-zh-Hans.png
+            ${{ runner.temp }}/gesture-lab-zh-Hans.png
+            ${{ runner.temp }}/menu-command-zh-Hans.png
+      - name: Build app bundle
+        run: bash scripts/build-app.sh release
+      - name: Verify built localization resources
+        run: python3 scripts/check-localization.py dist/ActionFlow.app
+      - name: Verify app metadata signature and architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.architecture }}
+        run: bash scripts/check-bundle.sh dist/ActionFlow.app
+      - name: Check release privacy
+        run: python3 scripts/check-release-privacy.py
+      - name: Preserve app permissions in archive
+        run: python3 scripts/zip-app.py dist/ActionFlow.app dist/ActionFlow-macos.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ActionFlow-macos-${{ matrix.architecture }}-adhoc
+          path: dist/ActionFlow-macos.zip

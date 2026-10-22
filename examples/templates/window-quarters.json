@@ -1,0 +1,148 @@
+{
+  "allowScripts" : false,
+  "automationEnabled" : false,
+  "launchAtLogin" : false,
+  "rules" : [
+    {
+      "actions" : [
+        {
+          "delaySeconds" : 1,
+          "id" : "47465450-0002-0001-8000-000000000001",
+          "keyCode" : 0,
+          "kind" : "window",
+          "modifiers" : 1048576,
+          "text" : "",
+          "windowOperation" : "topLeft"
+        }
+      ],
+      "conditions" : {
+        "appBundleIdentifiers" : [
+
+        ],
+        "excludedAppBundleIdentifiers" : [
+
+        ]
+      },
+      "cooldown" : 0.5,
+      "enabled" : false,
+      "group" : "Built-in templates",
+      "id" : "47465450-0002-0001-8000-000000000000",
+      "name" : "Window to top-left quarter",
+      "trigger" : {
+        "appBundleIdentifier" : "",
+        "intervalSeconds" : 60,
+        "keyCode" : 32,
+        "kind" : "shortcut",
+        "modifiers" : 786432,
+        "mouseButton" : 2,
+        "scrollDirection" : "up"
+      }
+    },
+    {
+      "actions" : [
+        {
+          "delaySeconds" : 1,
+          "id" : "47465450-0002-0002-8000-000000000001",
+          "keyCode" : 0,
+          "kind" : "window",
+          "modifiers" : 1048576,
+          "text" : "",
+          "windowOperation" : "topRight"
+        }
+      ],
+      "conditions" : {
+        "appBundleIdentifiers" : [
+
+        ],
+        "excludedAppBundleIdentifiers" : [
+
+        ]
+      },
+      "cooldown" : 0.5,
+      "enabled" : false,
+      "group" : "Built-in templates",
+      "id" : "47465450-0002-0002-8000-000000000000",
+      "name" : "Window to top-right quarter",
+      "trigger" : {
+        "appBundleIdentifier" : "",
+        "intervalSeconds" : 60,
+        "keyCode" : 34,
+        "kind" : "shortcut",
+        "modifiers" : 786432,
+        "mouseButton" : 2,
+        "scrollDirection" : "up"
+      }
+    },
+    {
+      "actions" : [
+        {
+          "delaySeconds" : 1,
+          "id" : "47465450-0002-0003-8000-000000000001",
+          "keyCode" : 0,
+          "kind" : "window",
+          "modifiers" : 1048576,
+          "text" : "",
+          "windowOperation" : "bottomLeft"
+        }
+      ],
+      "conditions" : {
+        "appBundleIdentifiers" : [
+
+        ],
+        "excludedAppBundleIdentifiers" : [
+
+        ]
+      },
+      "cooldown" : 0.5,
+      "enabled" : false,
+      "group" : "Built-in templates",
+      "id" : "47465450-0002-0003-8000-000000000000",
+      "name" : "Window to bottom-left quarter",
+      "trigger" : {
+        "appBundleIdentifier" : "",
+        "intervalSeconds" : 60,
+        "keyCode" : 38,
+        "kind" : "shortcut",
+        "modifiers" : 786432,
+        "mouseButton" : 2,
+        "scrollDirection" : "up"
+      }
+    },
+    {
+      "actions" : [
+        {
+          "delaySeconds" : 1,
+          "id" : "47465450-0002-0004-8000-000000000001",
+          "keyCode" : 0,
+          "kind" : "window",
+          "modifiers" : 1048576,
+          "text" : "",
+          "windowOperation" : "bottomRight"
+        }
+      ],
+      "conditions" : {
+        "appBundleIdentifiers" : [
+
+        ],
+        "excludedAppBundleIdentifiers" : [
+
+        ]
+      },
+      "cooldown" : 0.5,
+      "enabled" : false,
+      "group" : "Built-in templates",
+      "id" : "47465450-0002-0004-8000-000000000000",
+      "name" : "Window to bottom-right quarter",
+      "trigger" : {
+        "appBundleIdentifier" : "",
+        "intervalSeconds" : 60,
+        "keyCode" : 40,
+        "kind" : "shortcut",
+        "modifiers" : 786432,
+        "mouseButton" : 2,
+        "scrollDirection" : "up"
+      }
+    }
+  ],
+  "schemaVersion" : 1
+}

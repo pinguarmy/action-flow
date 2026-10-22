@@ -1,0 +1,78 @@
+{
+  "allowScripts" : false,
+  "automationEnabled" : false,
+  "launchAtLogin" : false,
+  "rules" : [
+    {
+      "actions" : [
+        {
+          "delaySeconds" : 1,
+          "id" : "47465450-0001-0001-8000-000000000001",
+          "keyCode" : 0,
+          "kind" : "window",
+          "modifiers" : 1048576,
+          "text" : "",
+          "windowOperation" : "leftHalf"
+        }
+      ],
+      "conditions" : {
+        "appBundleIdentifiers" : [
+
+        ],
+        "excludedAppBundleIdentifiers" : [
+
+        ]
+      },
+      "cooldown" : 0.5,
+      "enabled" : false,
+      "group" : "Built-in templates",
+      "id" : "47465450-0001-0001-8000-000000000000",
+      "name" : "Window to left half",
+      "trigger" : {
+        "appBundleIdentifier" : "",
+        "intervalSeconds" : 60,
+        "keyCode" : 123,
+        "kind" : "shortcut",
+        "modifiers" : 786432,
+        "mouseButton" : 2,
+        "scrollDirection" : "up"
+      }
+    },
+    {
+      "actions" : [
+        {
+          "delaySeconds" : 1,
+          "id" : "47465450-0001-0002-8000-000000000001",
+          "keyCode" : 0,
+          "kind" : "window",
+          "modifiers" : 1048576,
+          "text" : "",
+          "windowOperation" : "rightHalf"
+        }
+      ],
+      "conditions" : {
+        "appBundleIdentifiers" : [
+
+        ],
+        "excludedAppBundleIdentifiers" : [
+
+        ]
+      },
+      "cooldown" : 0.5,
+      "enabled" : false,
+      "group" : "Built-in templates",
+      "id" : "47465450-0001-0002-8000-000000000000",
+      "name" : "Window to right half",
+      "trigger" : {
+        "appBundleIdentifier" : "",
+        "intervalSeconds" : 60,
+        "keyCode" : 124,
+        "kind" : "shortcut",
+        "modifiers" : 786432,
+        "mouseButton" : 2,
+        "scrollDirection" : "up"
+      }
+    }
+  ],
+  "schemaVersion" : 1
+}

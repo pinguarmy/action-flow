@@ -1,0 +1,43 @@
+{
+  "allowScripts" : false,
+  "automationEnabled" : false,
+  "launchAtLogin" : false,
+  "rules" : [
+    {
+      "actions" : [
+        {
+          "delaySeconds" : 1,
+          "id" : "47465450-0005-0001-8000-000000000001",
+          "keyCode" : 0,
+          "kind" : "insertText",
+          "modifiers" : 1048576,
+          "text" : "Meeting notes\n\nTopic: \nNotes: \nNext steps: \n",
+          "windowOperation" : "leftHalf"
+        }
+      ],
+      "conditions" : {
+        "appBundleIdentifiers" : [
+
+        ],
+        "excludedAppBundleIdentifiers" : [
+
+        ]
+      },
+      "cooldown" : 0.5,
+      "enabled" : false,
+      "group" : "Built-in templates",
+      "id" : "47465450-0005-0001-8000-000000000000",
+      "name" : "Insert meeting notes outline",
+      "trigger" : {
+        "appBundleIdentifier" : "",
+        "intervalSeconds" : 60,
+        "keyCode" : 45,
+        "kind" : "doubleShortcut",
+        "modifiers" : 786432,
+        "mouseButton" : 2,
+        "scrollDirection" : "up"
+      }
+    }
+  ],
+  "schemaVersion" : 1
+}
