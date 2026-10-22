@@ -8,7 +8,7 @@ final class RuleSchedulerTests: XCTestCase {
     }
     func testAutomaticEligibilityFailsClosed() {
         XCTAssertTrue(RuleScheduler.canAutomaticallyRun(context:app,editorBundleIdentifier:"io.github.pinguarmy.actionflow",automationEnabled:true,isRecording:false,isPreparingManualRun:false))
-        for context in [ExecutionContext(processIdentifier:nil,bundleIdentifier:"com.example.Editor"),ExecutionContext(processIdentifier:0,bundleIdentifier:"com.example.Editor"),ExecutionContext(processIdentifier:1,bundleIdentifier:""),ExecutionContext(processIdentifier:1,bundleIdentifier:"ORG.ACTIONFLOW.APP")] {
+        for context in [ExecutionContext(processIdentifier:nil,bundleIdentifier:"com.example.Editor"),ExecutionContext(processIdentifier:0,bundleIdentifier:"com.example.Editor"),ExecutionContext(processIdentifier:1,bundleIdentifier:""),ExecutionContext(processIdentifier:1,bundleIdentifier:"IO.GITHUB.PINGUARMY.ACTIONFLOW")] {
             XCTAssertFalse(RuleScheduler.canAutomaticallyRun(context:context,editorBundleIdentifier:"io.github.pinguarmy.actionflow",automationEnabled:true,isRecording:false,isPreparingManualRun:false))
         }
         XCTAssertFalse(RuleScheduler.canAutomaticallyRun(context:app,editorBundleIdentifier:"io.github.pinguarmy.actionflow",automationEnabled:true,isRecording:true,isPreparingManualRun:false))
