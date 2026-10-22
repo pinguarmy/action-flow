@@ -216,7 +216,7 @@ do {
     let context = ExecutionContext(processIdentifier: 100, bundleIdentifier: "com.example.Editor")
     try check(RuleScheduler.canAutomaticallyRun(context: context, editorBundleIdentifier: "io.github.pinguarmy.actionflow", automationEnabled: true, isRecording: false, isPreparingManualRun: false), "scheduler accepts explicit enabled external target")
     try check(!RuleScheduler.canAutomaticallyRun(context: context, editorBundleIdentifier: "io.github.pinguarmy.actionflow", automationEnabled: true, isRecording: true, isPreparingManualRun: false), "scheduler blocks recording")
-    let ownContext = ExecutionContext(processIdentifier: 100, bundleIdentifier: "ORG.ACTIONFLOW.APP")
+    let ownContext = ExecutionContext(processIdentifier: 100, bundleIdentifier: "IO.GITHUB.PINGUARMY.ACTIONFLOW")
     try check(!RuleScheduler.canAutomaticallyRun(context: ownContext, editorBundleIdentifier: "io.github.pinguarmy.actionflow", automationEnabled: true, isRecording: false, isPreparingManualRun: false), "scheduler blocks own editor")
     var scheduler = RuleScheduler()
     let shortcut = AutomationRule(name: "Scheduled shortcut", enabled: true, trigger: Trigger(kind: .shortcut, keyCode: 0, modifiers: [.command]), actions: [AutomationAction(kind: .delay, delaySeconds: 0)], cooldown: 1)
