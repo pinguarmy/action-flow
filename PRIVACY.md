@@ -1,14 +1,14 @@
-# 隐私说明
+# Privacy
 
-ActionFlow 不含遥测、账户、云同步或远程控制服务。规则在本地执行，应用不上传配置或运行记录。
+ActionFlow has no telemetry, accounts, cloud sync or remote control service. Rules run locally, and the app does not upload configurations or execution history.
 
-## 数据使用
+## Data use
 
-- 输入监控用于匹配已启用的快捷键、鼠标和滚动触发器，不保存原始键入内容。
-- 应用事件使用应用标识与进程信息，窗口和文本动作使用辅助功能对象，菜单动作读取匹配路径所需的菜单标题。
-- 配置、备份与快照保存在本地，可含用户填写的文本、URL、应用标识和脚本。
-- 最近运行状态在内存保留，不保存动作正文或脚本输出。
+- Input Monitoring matches enabled keyboard, mouse and scroll triggers without storing raw typed text.
+- Application events use bundle identifiers and process information. Window and text actions use Accessibility objects; menu actions read titles needed to match the configured path.
+- Configurations, backups and snapshots stay on disk and may contain text, URLs, app identifiers and scripts you provide.
+- Recent execution status stays in memory. Action bodies and script output are not stored in the activity history.
 
-URL、应用菜单和 Shell 动作会产生你配置的外部效果，其中可能包括网络访问和文件修改。应用不负责隔离这些动作。
+URL, menu and shell actions produce the effects you configure, which may include network access and file changes. The app does not sandbox these actions.
 
-离线 CLI 只读取用户指定的配置，默认不访问正在使用的配置，也不会执行规则。截图和预览检查仅渲染应用自身视图；分享图片或配置前，请自行检查私人内容。
+The offline CLI reads files you specify, does not access the live configuration by default, and never executes rules. Rendering checks capture only the app's own views. Review images and configuration files before sharing private content.

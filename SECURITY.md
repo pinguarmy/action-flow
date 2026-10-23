@@ -1,28 +1,28 @@
-# 安全说明
+# Security
 
-ActionFlow 按你启用的规则执行桌面操作，拥有当前用户及已授予的系统权限，不是执行沙箱。
+ActionFlow executes desktop actions from rules you enable, using your user account and granted system permissions. It is not an execution sandbox.
 
-## 权限与默认行为
+## Permissions and defaults
 
-- 全局自动化和 Shell 脚本默认关闭，示例与导入规则默认禁用。
-- 输入监控、辅助功能、通知与登录启动由用户选择授权。
-- 输入观察是被动的，不拦截或存储其他应用中的键入文本。
-- 应用不提供遥测、远程配置、网络监听或自动授权功能。
+- Global automation and shell scripts start off. Examples and imported rules start disabled.
+- Input Monitoring, Accessibility, notifications and login startup require your approval.
+- Input observation is passive. It does not intercept or store text typed in other apps.
+- There is no telemetry, remote configuration endpoint, network listener or automatic permission grant.
 
-## 规则与动作
+## Rules and actions
 
-只启用你理解的规则。Shell 脚本可读写或删除文件，链接与脚本可能访问网络，菜单命令也可能执行破坏性操作。导入配置不等于可信审查。
+Enable only rules you understand. Shell scripts can read, modify or delete files; links and scripts may access the network; menu commands can invoke destructive operations. Importing a configuration is not a security review.
 
-运行前会检查权限、会话状态和目标应用，执行中继续检查焦点。系统睡眠或会话切换会暂停自动化，需要手动恢复。这些保护不能使事件投递完全原子化，也不能撤销先前动作。
+The app checks permissions, session state and target identity before execution, and continues checking focus during sensitive actions. Sleep and session changes pause automation until you resume it. These checks cannot make event delivery fully atomic or undo earlier effects.
 
-菜单栏提供暂停和停止。脚本有时间和进程组限制，但恶意脚本可启动其他进程，因此不能将它视为隔离边界。
+Pause and stop controls are available in the menu bar. Scripts have time and process-group limits, but a malicious script may launch other processes. Do not treat these limits as isolation.
 
-## 配置安全
+## Configuration
 
-配置与备份以私有权限写入，并采用临时文件和原子替换。协作写入锁避免多个应用实例互相覆盖，但不约束外部编辑器。配置和导出文件可能含私人文本、应用标识、URL 或代码。
+Configurations and backups use private file permissions, temporary files and atomic replacement. A cooperative writer lock prevents app instances from overwriting each other, but does not constrain external editors. Configurations and exports may contain private text, app identifiers, URLs or code.
 
-## 报告问题
+## Reporting
 
-通过 GitHub 的私密漏洞报告功能提交安全问题。不要在公开 Issue 上传密码、令牌、私人规则、完整配置或原始桌面截图。
+Use GitHub's private vulnerability reporting feature. Do not post passwords, tokens, private rules, full configurations or raw desktop screenshots in public issues.
 
-发布包为 ad-hoc 签名，尚未 Apple 公证。重新构建或更换应用标识后，系统可能要求重新授予权限。不要为运行应用关闭系统安全保护。
+Release packages are ad-hoc signed and not Apple-notarized. Rebuilding or changing the app identifier may require permissions to be granted again. Do not disable system security protections to run the app.

@@ -1,13 +1,13 @@
 # ActionFlow 0.1.0 Alpha 7
 
-原生 macOS 规则与动作链自动化工具。
+A native macOS app for rule-based automation and action chains.
 
-- 快捷键、鼠标、滚动、应用事件和定时触发器。
-- 窗口布局、文本、菜单命令、应用、链接、通知和可选脚本动作。
-- 规则模板、预览、运行进度、筛选、备份与快照恢复。
-- 英文和简体中文界面。
-- 离线配置检查 CLI。
+- Shortcut, mouse, scroll, application-event and timer triggers.
+- Window layouts, text, menu commands, apps, links, notifications and optional scripts.
+- Rule templates, previews, execution progress, filters, backups and snapshot recovery.
+- English and Simplified Chinese interfaces.
+- An offline CLI for inspecting configuration files.
 
-需要 macOS 14+，提供 Apple Silicon 和 Intel 下载包。解压或打开 DMG 后，将 `ActionFlow.app` 拖入“应用程序”。全局自动化和脚本默认关闭，系统权限需自行授予。
+Requires macOS 14+. Apple Silicon and Intel packages are available. Extract the ZIP or open the DMG, then drag `ActionFlow.app` into Applications. Global automation and scripts start off; grant system permissions yourself as needed.
 
-当前为 Alpha，采用 ad-hoc 签名，尚未 Apple 公证。应用内手势实验室不等于全局多指手势支持。
+This is an ad-hoc-signed Alpha release, without Apple notarization. The in-app gesture lab does not provide global multi-finger gesture support.
