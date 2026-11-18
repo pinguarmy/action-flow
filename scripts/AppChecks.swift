@@ -249,6 +249,39 @@ struct AppChecks {
             check(interestModel.observedInputInterest == [], "disabling the only input rule drops input interest")
             check((try? Data(contentsOf: interestURL)) == interestBytes, "configuration mutation alone never writes")
             interestModel.shutdown()
+            // Single-press shortcut rules keep their key press unless set to pass through. Pure interest and
+            // persistence checks: no permission exists in CI, so no tap is ever created here.
+            let passThroughURL = dir.appendingPathComponent("pass-through.json")
+            let passThroughModel = AppModel(configurationURL: passThroughURL)
+            passThroughModel.errorMessage = nil
+            passThroughModel.configuration.rules = [AutomationRule(name: "Shortcut fixture", enabled: true,
+                                                                   trigger: Trigger(keyCode: 123, modifiers: [.control, .option]),
+                                                                   actions: [AutomationAction(kind: .delay, delaySeconds: 0)])]
+            check(passThroughModel.observedInputInterest == [.keyboard, .shortcutInterception],
+                  "an enabled shortcut rule keeps its key press by default")
+            passThroughModel.configuration.rules[0].trigger.passThrough = true
+            check(passThroughModel.observedInputInterest == [.keyboard] && passThroughModel.observedInputInterest.wants(.shortcut),
+                  "a pass-through shortcut rule is still observed but never keeps its key press")
+            passThroughModel.save()
+            let passThroughSaved = try ConfigurationStore(url: passThroughURL).load()
+            check(passThroughSaved.rules.count == 1 && passThroughSaved.rules.first?.trigger.passThrough == true,
+                  "the pass-through setting is saved and reloaded")
+            passThroughModel.shutdown()
+            // Files written before the setting existed have no passThrough key and keep the key press.
+            var legacyObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(passThroughSaved)) as? [String: Any] ?? [:]
+            var legacyRules = legacyObject["rules"] as? [[String: Any]] ?? []
+            for index in legacyRules.indices {
+                var trigger = legacyRules[index]["trigger"] as? [String: Any] ?? [:]
+                trigger.removeValue(forKey: "passThrough")
+                legacyRules[index]["trigger"] = trigger
+            }
+            legacyObject["rules"] = legacyRules
+            let legacyURL = dir.appendingPathComponent("legacy-shortcut.json")
+            try JSONSerialization.data(withJSONObject: legacyObject).write(to: legacyURL)
+            check((try? String(contentsOf: legacyURL, encoding: .utf8))?.contains("passThrough") == false, "legacy fixture omits passThrough")
+            let legacyLoaded = try ConfigurationStore(url: legacyURL).load()
+            check(legacyLoaded.rules.count == 1 && legacyLoaded.rules.first?.trigger.passThrough == false,
+                  "a legacy shortcut rule without passThrough keeps its key press")
             model.configuration.rules = AutomationRule.exampleRules
             model.selection = model.configuration.rules.first?.id
             model.statusMessage = nil

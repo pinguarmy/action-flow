@@ -110,7 +110,7 @@ final class AppModel: ObservableObject {
         persistenceBlocked = loadError != nil
         if loadError == nil { lastSavedConfiguration = configuration }
         refreshPermissions()
-        monitor.onEvent = { [weak self] event in self?.handle(event) }
+        monitor.onEvent = { [weak self] event in self?.handle(event) ?? false }
         monitor.onStatus = { [weak self] message in self?.statusMessage = message }
         workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
@@ -564,19 +564,29 @@ final class AppModel: ObservableObject {
         activity.insert(ActivityEntry(ruleName: name, message: message, success: success, completedActions: progress?.completedActions, totalActions: progress?.actionCount), at: 0)
         if activity.count > 200 { activity.removeLast(activity.count - 200) }
     }
-    private func handle(_ event: InputEvent) {
+    /// Returns true when the observed key press belongs to an enabled single-press shortcut rule that keeps
+    /// it from the active app. Never true unless the input is eligible for automatic execution, so pausing
+    /// automation, focusing ActionFlow, recording a shortcut or a locked session always lets keys through.
+    @discardableResult
+    private func handle(_ event: InputEvent) -> Bool {
         // Skip the scheduler pass for input no enabled rule can match. Mouse and scroll never affect a
         // pending double-shortcut pair, and app activation invalidates pairs in the workspace observer.
-        guard triggerInterest.wants(event.kind) else { return }
+        guard triggerInterest.wants(event.kind) else { return false }
         let context = currentExecutionContext
-        guard eligibleForAutomaticExecution(context) else { return }
+        guard eligibleForAutomaticExecution(context) else { return false }
         let isLifecycle = event.kind == .appLaunched || event.kind == .appTerminated
-        if !isLifecycle && !event.appBundleIdentifier.isEmpty && event.appBundleIdentifier.lowercased() != context.bundleIdentifier { return }
+        if !isLifecycle && !event.appBundleIdentifier.isEmpty && event.appBundleIdentifier.lowercased() != context.bundleIdentifier { return false }
+        // Independent of cooldown and running state, so holding an owned chord never leaks repeats.
+        let consumes = event.kind == .shortcut && ShortcutInterception.consumes(keyCode: event.keyCode, modifiers: event.modifiers,
+            rules: configuration.rules, bundleIdentifier: context.bundleIdentifier)
+        // Auto-repeat never triggers a rule or affects a pending double press.
+        if event.isRepeat { return consumes }
         let signal = TriggerSignal(kind: event.kind, keyCode: event.keyCode, modifiers: event.modifiers,
             mouseButton: event.mouseButton, scrollDirection: event.scrollDirection, appBundleIdentifier: event.appBundleIdentifier)
         for rule in scheduler.candidates(for: signal, rules: configuration.rules, context: context, now: ProcessInfo.processInfo.systemUptime) {
             enqueue(rule, context: context)
         }
+        return consumes
     }
     func handleSessionTransition(_ transition: SessionTransition) {
         SessionSafety.noteTransition(transition)
@@ -603,6 +613,10 @@ final class AppModel: ObservableObject {
             return
         }
         if configuration.automationEnabled && permissions.inputMonitoring && triggerInterest.needsInputMonitoring && !monitor.running { configureMonitor() }
+        // Follow Accessibility grants and revocations: an active keyboard tap needs Accessibility, and a
+        // revoked grant must fall back to listen-only promptly. A no-op inside start(interest:) when the
+        // requested mode is unchanged (for example after macOS refused the active tap).
+        if monitor.running && triggerInterest.contains(.shortcutInterception) && monitor.interceptsShortcuts != AXIsProcessTrusted() { configureMonitor() }
         let context = currentExecutionContext
         guard eligibleForAutomaticExecution(context) else { return }
         for rule in scheduler.intervalCandidates(rules: configuration.rules, context: context, now: ProcessInfo.processInfo.systemUptime) {

@@ -15,14 +15,14 @@ struct PermissionsView: View {
                 PermissionRow(
                     symbol: "accessibility",
                     title: "Accessibility",
-                    explanation: "Move and resize windows, send keyboard shortcuts and insert text into other apps.",
+                    explanation: "Move and resize windows, send keyboard shortcuts and insert text into other apps. Also lets shortcut rules keep their key presses from reaching other apps.",
                     granted: model.permissions.accessibility,
                     action: model.requestAccessibility
                 )
                 PermissionRow(
                     symbol: "keyboard",
                     title: "Input Monitoring",
-                    explanation: "Observe global keyboard, mouse button and scroll triggers. Events continue to reach the original app.",
+                    explanation: "Observe global keyboard, mouse button and scroll triggers. Mouse, scroll and double-press input still reach the original app. Single-press shortcut rules keep their key press unless set to pass it through.",
                     granted: model.permissions.inputMonitoring,
                     action: model.requestInputMonitoring
                 )

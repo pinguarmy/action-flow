@@ -11,7 +11,9 @@ enum InputDecoder {
         input.modifiers = modifiers(from: event.flags)
         switch type {
         case .keyDown:
-            guard event.getIntegerValueField(.keyboardEventAutorepeat) == 0 else { return nil }
+            // Auto-repeat is decoded so the model can keep repeats of an owned chord from the
+            // active app; it never triggers a rule (AppModel.handle checks isRepeat first).
+            input.isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
             let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
             guard (0...Int64(UInt16.max)).contains(keyCode) else { return nil }
             // Double-press recognition belongs to RuleScheduler. Physical key

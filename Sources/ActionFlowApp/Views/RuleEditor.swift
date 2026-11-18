@@ -252,6 +252,20 @@ struct RuleEditor: View {
                 if rule.trigger.kind == .doubleShortcut {
                     ForgeNote(text: "Record the shortcut once to set its keys. Double-press mode stays selected.")
                 }
+                if rule.trigger.kind == .shortcut {
+                    Toggle(AppLocalization.text("Also send this shortcut to the active app"), isOn: $rule.trigger.passThrough)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                    ForgeNote(text: rule.trigger.passThrough
+                              ? "The key press also reaches the active app, as before."
+                              : "ActionFlow keeps this key press for the rule. The active app does not receive it.",
+                              symbol: rule.trigger.passThrough ? "arrow.uturn.right.circle" : "hand.raised")
+                    if !rule.trigger.passThrough && !model.permissions.accessibility {
+                        ForgeNote(text: "Without Accessibility permission the key press still reaches the active app. Grant it in Permissions to keep shortcuts for their rules.",
+                                  symbol: "exclamationmark.triangle", warning: true)
+                        reviewPermissionsButton
+                    }
+                }
                 DisclosureGroup("Set keys manually") {
                     VStack(alignment: .leading, spacing: 12) {
                         KeyCodeEditor(keyCode: $rule.trigger.keyCode)

@@ -18,5 +18,6 @@ This is an ad-hoc-signed Alpha release, without Apple notarization. The in-app g
 - An unfinished draft no longer raises an error or pauses automation; Save lists what to fix.
 - Menu commands are edited one title per row. The JSON form remains available.
 - Validation errors, rule summaries, conflict warnings, status and activity messages follow the interface language.
+- Single-press shortcut rules keep their key press from reaching the active app. This needs Accessibility permission and can be turned off per rule.
 - Input observation is limited to the input kinds enabled rules use.
 - The minimum window size is 960 × 620.

@@ -50,7 +50,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>NSHighResolutionCapable</key><true/>
 <key>NSPrincipalClass</key><string>NSApplication</string>
 <key>NSHumanReadableCopyright</key><string>Copyright © 2026 ActionFlow contributors. MIT License.</string>
-<key>NSInputMonitoringUsageDescription</key><string>ActionFlow observes shortcuts, mouse buttons and scrolling to run the rules you explicitly enable. It does not record your typing.</string>
+<key>NSInputMonitoringUsageDescription</key><string>ActionFlow observes shortcuts, mouse buttons and scrolling to run the rules you explicitly enable, and keeps a matching shortcut from also reaching the active app. It does not record your typing.</string>
 <key>NSAppleEventsUsageDescription</key><string>ActionFlow only executes scripts when you explicitly opt in and run a rule.</string>
 </dict></plist>
 PLIST

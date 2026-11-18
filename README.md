@@ -13,7 +13,7 @@ A native macOS automation app. Connect shortcuts, mouse input, scrolling, applic
 - Store rules as local JSON, with import, export, backups and snapshot recovery. Imported rules start disabled.
 - Use English or Simplified Chinese, following your system language, including validation and activity messages.
 
-Input observation is passive: original keyboard and mouse events still reach the active app. Only the input kinds your enabled rules use are observed; with no keyboard, mouse or scroll rule enabled, nothing is. The gesture lab recognizes swipes, magnification and rotation inside the app only; it does not provide global multi-finger gesture triggers.
+A single-press shortcut rule keeps its key press, so the active app does not also receive it. This needs Accessibility permission and can be turned off per rule. Mouse, scroll and double-press input is only observed and still reaches the active app. Only the input kinds your enabled rules use are observed; with no keyboard, mouse or scroll rule enabled, nothing is. The gesture lab recognizes swipes, magnification and rotation inside the app only; it does not provide global multi-finger gesture triggers.
 
 ## Install
 

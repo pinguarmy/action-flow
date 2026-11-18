@@ -98,10 +98,16 @@ struct RuntimeChecks {
         check(decodedKey?.kind == .shortcut && decodedKey?.keyCode == 42, "decoder preserves physical shortcut signal")
         check(decodedKey?.modifiers == [.command, .option, .control, .shift], "decoder keeps supported modifiers only")
         check(decodedKey?.appBundleIdentifier == "test.offline.fixture", "decoder uses supplied app identity")
+        check(decodedKey?.isRepeat == false, "decoder marks an ordinary key press as not repeated")
         key.setIntegerValueField(.keyboardEventAutorepeat, value: 1)
-        check(decode(.keyDown, key) == nil, "decoder drops key autorepeat")
-        key.setIntegerValueField(.keyboardEventAutorepeat, value: 0)
+        // Repeats are decoded only so an owned chord can keep them; AppModel never schedules a repeat.
+        let repeatedKey = decode(.keyDown, key)
+        check(repeatedKey?.kind == .shortcut && repeatedKey?.isRepeat == true, "decoder marks key autorepeat")
+        check(repeatedKey?.keyCode == 42 && repeatedKey?.modifiers == [.command, .option, .control, .shift],
+              "decoder keeps the chord of a key autorepeat")
         key.setIntegerValueField(.eventSourceUserData, value: actionFlowEventMarker)
+        check(decode(.keyDown, key) == nil, "decoder drops self-generated key autorepeat")
+        key.setIntegerValueField(.keyboardEventAutorepeat, value: 0)
         check(decode(.keyDown, key) == nil, "decoder drops self-generated keys")
         for type: CGEventType in [.keyUp, .flagsChanged, .mouseMoved, .leftMouseUp, .tapDisabledByTimeout] {
             check(decode(type, syntheticEvent()) == nil, "decoder ignores irrelevant event \(type.rawValue)")

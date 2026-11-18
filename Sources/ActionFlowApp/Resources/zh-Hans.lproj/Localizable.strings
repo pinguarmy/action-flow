@@ -690,3 +690,12 @@
 "Not saved: fix %lld issues first" = "未保存：请先修正 %lld 个问题";
 "Unsaved changes" = "有未保存的修改";
 "All changes saved" = "所有修改均已保存";
+"Also send this shortcut to the active app" = "同时将此快捷键发送给当前应用";
+"The key press also reaches the active app, as before." = "按键也会传给当前应用，与以前相同。";
+"ActionFlow keeps this key press for the rule. The active app does not receive it." = "ActionFlow 会为此规则保留这次按键，当前应用不会收到。";
+"Without Accessibility permission the key press still reaches the active app. Grant it in Permissions to keep shortcuts for their rules." = "没有“辅助功能”权限时，按键仍会传给当前应用。请在“权限”中授予，让快捷键只用于其规则。";
+"Input monitoring is active. Shortcut rules keep their key presses from reaching other apps. Secure input and system-reserved shortcuts may not be observable." = "输入监听已开启。快捷键规则会阻止其按键传给其他应用。安全输入和系统保留的快捷键可能无法被监听到。";
+"Input monitoring is active, but macOS did not allow ActionFlow to keep shortcut key presses. They still reach the active app." = "输入监听已开启，但 macOS 未允许 ActionFlow 保留快捷键按键，按键仍会传给当前应用。";
+"macOS could not create the input monitor. Check Input Monitoring permission. Secure input can hide keyboard events." = "macOS 无法创建输入监听。请检查“输入监控”权限。安全输入模式可能会隐藏键盘事件。";
+"Move and resize windows, send keyboard shortcuts and insert text into other apps. Also lets shortcut rules keep their key presses from reaching other apps." = "移动窗口、调整窗口大小，以及向其他应用发送快捷键和插入文本。还能让快捷键规则阻止其按键传给其他应用。";
+"Observe global keyboard, mouse button and scroll triggers. Mouse, scroll and double-press input still reach the original app. Single-press shortcut rules keep their key press unless set to pass it through." = "监听全局键盘、鼠标按键和滚动触发器。鼠标、滚动和双按快捷键的输入仍会传递给原应用。单按快捷键规则会保留其按键，除非设置为同时发送给应用。";

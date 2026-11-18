@@ -56,11 +56,14 @@ public struct Trigger: Codable, Equatable, Sendable {
     public var scrollDirection: ScrollDirection
     public var intervalSeconds: Double
     public var appBundleIdentifier: String
+    /// `.shortcut` only: `false` keeps the key press for the rule (the active app does not receive it);
+    /// `true` lets the key press also reach the active app. No effect for any other trigger kind.
+    public var passThrough: Bool
 
     public init(kind: TriggerKind = .shortcut, keyCode: UInt16 = 0,
                 modifiers: ModifierKeys = [.control, .option], mouseButton: Int = 2,
                 scrollDirection: ScrollDirection = .up, intervalSeconds: Double = 60,
-                appBundleIdentifier: String = "") {
+                appBundleIdentifier: String = "", passThrough: Bool = false) {
         self.kind = kind
         self.keyCode = keyCode
         self.modifiers = modifiers
@@ -68,6 +71,24 @@ public struct Trigger: Codable, Equatable, Sendable {
         self.scrollDirection = scrollDirection
         self.intervalSeconds = intervalSeconds
         self.appBundleIdentifier = appBundleIdentifier
+        self.passThrough = passThrough
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case kind, keyCode, modifiers, mouseButton, scrollDirection, intervalSeconds, appBundleIdentifier, passThrough
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try values.decode(TriggerKind.self, forKey: .kind)
+        keyCode = try values.decode(UInt16.self, forKey: .keyCode)
+        modifiers = try values.decode(ModifierKeys.self, forKey: .modifiers)
+        mouseButton = try values.decode(Int.self, forKey: .mouseButton)
+        scrollDirection = try values.decode(ScrollDirection.self, forKey: .scrollDirection)
+        intervalSeconds = try values.decode(Double.self, forKey: .intervalSeconds)
+        appBundleIdentifier = try values.decode(String.self, forKey: .appBundleIdentifier)
+        // Files written before this setting existed keep the key press for the rule.
+        passThrough = try values.decodeIfPresent(Bool.self, forKey: .passThrough) ?? false
     }
 
     public var summary: String {

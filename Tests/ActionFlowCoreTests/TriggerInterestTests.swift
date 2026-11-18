@@ -10,7 +10,7 @@ final class TriggerInterestTests: XCTestCase {
 
     func testEachTriggerKindMapsToItsInterest() {
         let expected: [(TriggerKind, TriggerInterest)] = [
-            (.shortcut, .keyboard), (.doubleShortcut, .keyboard), (.mouseButton, .mouseButtons),
+            (.shortcut, [.keyboard, .shortcutInterception]), (.doubleShortcut, .keyboard), (.mouseButton, .mouseButtons),
             (.scroll, .scroll), (.appActivated, .appActivation), (.appLaunched, .appLifecycle),
             (.appTerminated, .appLifecycle), (.interval, .interval)
         ]
@@ -21,7 +21,7 @@ final class TriggerInterestTests: XCTestCase {
     }
 
     func testOptionsAreDistinct() {
-        let all: [TriggerInterest] = [.keyboard, .mouseButtons, .scroll, .appActivation, .appLifecycle, .interval]
+        let all: [TriggerInterest] = [.keyboard, .mouseButtons, .scroll, .appActivation, .appLifecycle, .interval, .shortcutInterception]
         XCTAssertEqual(Set(all.map(\.rawValue)).count, all.count)
         for option in all { XCTAssertEqual(option.rawValue.nonzeroBitCount, 1) }
     }
@@ -40,7 +40,28 @@ final class TriggerInterestTests: XCTestCase {
         let interest = TriggerInterest(rules: [rule(.scroll), rule(.appLaunched), rule(.mouseButton, enabled: false)])
         XCTAssertEqual(interest, [.scroll, .appLifecycle])
         XCTAssertEqual(TriggerInterest(rules: TriggerKind.allCases.map { rule($0) }),
-                       [.keyboard, .mouseButtons, .scroll, .appActivation, .appLifecycle, .interval])
+                       [.keyboard, .mouseButtons, .scroll, .appActivation, .appLifecycle, .interval, .shortcutInterception])
+    }
+
+    func testShortcutInterceptionFollowsPassThroughAndKind() {
+        var passing = rule(.shortcut)
+        passing.trigger.passThrough = true
+        XCTAssertEqual(TriggerInterest(rules: [passing]), .keyboard)
+        XCTAssertTrue(TriggerInterest(rules: [passing]).needsInputMonitoring)
+        XCTAssertEqual(TriggerInterest(rules: [rule(.shortcut, enabled: false)]), [])
+        XCTAssertEqual(TriggerInterest(rules: [rule(.doubleShortcut)]), .keyboard)
+        var doublePassing = rule(.doubleShortcut)
+        doublePassing.trigger.passThrough = true
+        XCTAssertEqual(TriggerInterest(rules: [doublePassing]), .keyboard)
+        // A draft without Command, Option or Control can never consume a key press.
+        var unmodified = rule(.shortcut)
+        unmodified.trigger.modifiers = [.shift]
+        XCTAssertEqual(TriggerInterest(rules: [unmodified]), .keyboard)
+        XCTAssertEqual(TriggerInterest(rules: [passing, rule(.shortcut)]), [.keyboard, .shortcutInterception])
+        // Non-shortcut kinds ignore the setting.
+        var mouse = rule(.mouseButton)
+        mouse.trigger.passThrough = false
+        XCTAssertEqual(TriggerInterest(rules: [mouse]), .mouseButtons)
     }
 
     func testWantsUsesTheKeyboardFamilyForShortcutSignals() {

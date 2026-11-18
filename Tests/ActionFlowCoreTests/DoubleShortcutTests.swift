@@ -161,13 +161,18 @@ final class DoubleShortcutTests: XCTestCase {
         let oldJSON = Data("{\"kind\":\"shortcut\",\"keyCode\":0,\"modifiers\":1048576,\"mouseButton\":2,\"scrollDirection\":\"up\",\"intervalSeconds\":60,\"appBundleIdentifier\":\"\"}".utf8)
         var trigger = try JSONDecoder().decode(Trigger.self, from: oldJSON)
         XCTAssertEqual(trigger.kind, .shortcut)
+        XCTAssertFalse(trigger.passThrough)
         let oldObject = try XCTUnwrap(JSONSerialization.jsonObject(with: oldJSON) as? NSDictionary)
-        XCTAssertEqual(try JSONSerialization.jsonObject(with: JSONEncoder().encode(trigger)) as? NSDictionary, oldObject)
+        // Re-encoding keeps every legacy field and adds only the explicit pass-through setting.
+        let upgraded = try XCTUnwrap(oldObject.mutableCopy() as? NSMutableDictionary)
+        upgraded.setObject(false, forKey: "passThrough" as NSString)
+        let upgradedObject: NSDictionary = upgraded
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: JSONEncoder().encode(trigger)) as? NSDictionary, upgradedObject)
         trigger.kind = .doubleShortcut
         let encoded = try JSONEncoder().encode(trigger)
         XCTAssertEqual(try JSONDecoder().decode(Trigger.self, from: encoded), trigger)
         let newObject = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
-        XCTAssertEqual(Set(newObject.keys), Set(oldObject.allKeys.compactMap { $0 as? String }))
+        XCTAssertEqual(Set(newObject.keys), Set(oldObject.allKeys.compactMap { $0 as? String }).union(["passThrough"]))
         XCTAssertEqual(newObject["kind"] as? String, "doubleShortcut")
         XCTAssertEqual(trigger.summary, "⌘A × 2")
         XCTAssertEqual(TriggerKind.doubleShortcut.title, "Double-press shortcut")

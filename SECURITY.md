@@ -6,7 +6,7 @@ ActionFlow executes desktop actions from rules you enable, using your user accou
 
 - Global automation and shell scripts start off. Examples and imported rules start disabled.
 - Input Monitoring, Accessibility, notifications and login startup require your approval.
-- Input observation is passive. It does not intercept or store text typed in other apps.
+- Typed text is never stored. With Accessibility permission, a single-press shortcut rule keeps its own key press from reaching other apps unless you set the rule to pass it through. No other key, mouse or scroll input is intercepted.
 - There is no telemetry, remote configuration endpoint, network listener or automatic permission grant.
 
 ## Rules and actions

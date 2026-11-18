@@ -690,3 +690,12 @@
 "Not saved: fix %lld issues first" = "Not saved: fix %lld issues first";
 "Unsaved changes" = "Unsaved changes";
 "All changes saved" = "All changes saved";
+"Also send this shortcut to the active app" = "Also send this shortcut to the active app";
+"The key press also reaches the active app, as before." = "The key press also reaches the active app, as before.";
+"ActionFlow keeps this key press for the rule. The active app does not receive it." = "ActionFlow keeps this key press for the rule. The active app does not receive it.";
+"Without Accessibility permission the key press still reaches the active app. Grant it in Permissions to keep shortcuts for their rules." = "Without Accessibility permission the key press still reaches the active app. Grant it in Permissions to keep shortcuts for their rules.";
+"Input monitoring is active. Shortcut rules keep their key presses from reaching other apps. Secure input and system-reserved shortcuts may not be observable." = "Input monitoring is active. Shortcut rules keep their key presses from reaching other apps. Secure input and system-reserved shortcuts may not be observable.";
+"Input monitoring is active, but macOS did not allow ActionFlow to keep shortcut key presses. They still reach the active app." = "Input monitoring is active, but macOS did not allow ActionFlow to keep shortcut key presses. They still reach the active app.";
+"macOS could not create the input monitor. Check Input Monitoring permission. Secure input can hide keyboard events." = "macOS could not create the input monitor. Check Input Monitoring permission. Secure input can hide keyboard events.";
+"Move and resize windows, send keyboard shortcuts and insert text into other apps. Also lets shortcut rules keep their key presses from reaching other apps." = "Move and resize windows, send keyboard shortcuts and insert text into other apps. Also lets shortcut rules keep their key presses from reaching other apps.";
+"Observe global keyboard, mouse button and scroll triggers. Mouse, scroll and double-press input still reach the original app. Single-press shortcut rules keep their key press unless set to pass it through." = "Observe global keyboard, mouse button and scroll triggers. Mouse, scroll and double-press input still reach the original app. Single-press shortcut rules keep their key press unless set to pass it through.";
