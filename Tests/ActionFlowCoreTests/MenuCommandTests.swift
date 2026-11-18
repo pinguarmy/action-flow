@@ -143,4 +143,41 @@ final class MenuCommandTests: XCTestCase {
         XCTAssertThrowsError(try JSONDecoder().decode([AutomationAction].self, from: unknown))
         XCTAssertEqual(ActionKind.allCases.count, 9)
     }
+
+    func testDraftJSONRoundTripsArbitraryTitles() {
+        let samples: [[String]] = [
+            [], ["Only"], ["File", "New"], ["", " ", ""],
+            ["文件", "新建…", "emoji 😀", "e\u{301}"],
+            ["say \"hi\"", "back\\slash", "a/b", "tab\tand\nnewline"],
+            ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+        ]
+        for segments in samples {
+            let json = MenuCommandPath.draftJSON(for: segments)
+            XCTAssertEqual(MenuCommandPath.draftSegments(from: json), segments, json)
+        }
+        XCTAssertEqual(MenuCommandPath.draftJSON(for: []), "[]")
+        XCTAssertEqual(MenuCommandPath.draftJSON(for: ["File", "New"]), "[\"File\",\"New\"]")
+        XCTAssertFalse(MenuCommandPath.draftJSON(for: ["a/b"]).contains("\\/"))
+    }
+
+    func testDraftSegmentsAreLenientAboutPathRules() {
+        XCTAssertEqual(MenuCommandPath.draftSegments(from: "[]"), [])
+        XCTAssertEqual(MenuCommandPath.draftSegments(from: "[\"\"]"), [""])
+        XCTAssertEqual(MenuCommandPath.draftSegments(from: " [\"File\", \"   \"] "), ["File", "   "])
+        XCTAssertEqual(MenuCommandPath.draftSegments(from: "[\"a\\/b\", \"c\"]"), ["a/b", "c"])
+    }
+
+    func testDraftSegmentsRejectNonArraysAndNonStrings() {
+        let oversized = "[\"" + String(repeating: "x", count: MenuCommandPath.maximumJSONBytes) + "\"]"
+        for text in ["", "   \n", "not json", "{}", "\"File\"", "[1, \"a\"]", "[true]", "[null]",
+                     "[[\"a\"]]", "[\"a\", {}]", "[\"a\",", oversized] {
+            XCTAssertNil(MenuCommandPath.draftSegments(from: text), text.count > 64 ? "oversized" : text)
+        }
+    }
+
+    func testDraftJSONOfValidSegmentsParsesAsMenuPath() throws {
+        for segments in [["File", "New"], ["View", "Sort By", "Name/Date"], ["格式", "字体", "粗体"], ["Edit", "Find", "Use \"Selection\" for Find"]] {
+            XCTAssertEqual(try MenuCommandPath(parsing: MenuCommandPath.draftJSON(for: segments)).segments, segments)
+        }
+    }
 }

@@ -334,12 +334,25 @@ public final class ConfigurationStore {
         return configuration
     }
 
+    /// The exact content checks `save` applies before writing, without touching any file.
+    /// Empty means `save` will not reject the configuration for its content. (Size limits and file errors are separate.)
+    public static func validationErrors(for configuration: Configuration) -> [String] {
+        guard let failure = validationFailure(for: configuration) else { return [] }
+        if case .invalidConfiguration(let errors) = failure { return errors }
+        return [failure.errorDescription ?? ""]
+    }
+
     private func validate(_ configuration: Configuration) throws {
+        if let failure = ConfigurationStore.validationFailure(for: configuration) { throw failure }
+    }
+
+    /// Shared by `validate` and `validationErrors` so the two can never drift apart.
+    private static func validationFailure(for configuration: Configuration) -> ConfigurationStoreError? {
         guard configuration.schemaVersion == Configuration.currentSchemaVersion else {
-            throw ConfigurationStoreError.unsupportedSchema(configuration.schemaVersion)
+            return .unsupportedSchema(configuration.schemaVersion)
         }
         guard configuration.rules.count <= RuleValidator.maximumRules else {
-            throw ConfigurationStoreError.invalidConfiguration(["A configuration cannot have more than 1000 rules."])
+            return .invalidConfiguration(["A configuration cannot have more than 1000 rules."])
         }
         var errors: [String] = []
         if Set(configuration.rules.map(\.id)).count != configuration.rules.count {
@@ -349,7 +362,7 @@ public final class ConfigurationStore {
             let ruleErrors = rule.enabled ? RuleValidator.validate(rule) : RuleValidator.structuralErrors(rule)
             errors.append(contentsOf: ruleErrors.map { "Rule \(index + 1) (\(rule.name.prefix(80))): \($0)" })
         }
-        if !errors.isEmpty { throw ConfigurationStoreError.invalidConfiguration(errors) }
+        return errors.isEmpty ? nil : .invalidConfiguration(errors)
     }
 
     private func readBounded(_ source: URL) throws -> Data {

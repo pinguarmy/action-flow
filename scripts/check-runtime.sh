@@ -25,6 +25,7 @@ swiftc -swift-version 5 -parse-as-library -I "$BIN/Modules" \
  "$BIN/ActionFlowCore.build/RuleTemplates.swift.o" \
  "$BIN/ActionFlowCore.build/ExecutionProgress.swift.o" \
  "$BIN/ActionFlowCore.build/SessionTransition.swift.o" \
+ "$BIN/ActionFlowCore.build/TriggerInterest.swift.o" \
  -o "$TMP/RuntimeChecks"
 ACTIONFLOW_TEST_SECRET=DO_NOT_INHERIT "$TMP/RuntimeChecks"
 printf 'Runtime check binary: %s\n' "$TMP/RuntimeChecks"

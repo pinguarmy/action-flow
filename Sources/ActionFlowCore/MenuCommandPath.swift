@@ -60,6 +60,30 @@ public struct MenuCommandPath: Equatable, Sendable {
               let text = String(data: data, encoding: .utf8) else { return "[]" }
         return text
     }
+
+    /// Lenient decode for editors: the titles of a JSON array of strings, even if the path is not yet valid
+    /// (too few titles, empty titles). Returns nil when the text is not a JSON array of strings or exceeds maximumJSONBytes.
+    public static func draftSegments(from jsonText: String) -> [String]? {
+        guard jsonText.utf8.count <= maximumJSONBytes,
+              !jsonText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let data = jsonText.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data),
+              let array = object as? [Any] else { return nil }
+        var segments: [String] = []
+        for element in array {
+            // Same member rule as init(parsing:): NSNumber-bridged values and non-strings are rejected.
+            guard let title = element as? String, !(element is NSNumber) else { return nil }
+            segments.append(title)
+        }
+        return segments
+    }
+
+    /// Encodes editor titles as a compact JSON array, with no validation. Never throws; returns "[]" if encoding fails.
+    public static func draftJSON(for segments: [String]) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: segments, options: [.withoutEscapingSlashes]),
+              let text = String(data: data, encoding: .utf8) else { return "[]" }
+        return text
+    }
 }
 
 /// Fixed, redacted messages. Menu titles and JSON payloads never appear in errors.

@@ -24,6 +24,7 @@ swiftc -swift-version 5 -parse-as-library -I "$BIN/Modules" \
  "$BIN/ActionFlowCore.build/RuleQuery.swift.o" \
  "$BIN/ActionFlowCore.build/GestureRecognition.swift.o" \
  "$BIN/ActionFlowCore.build/ConfigurationLease.swift.o" \
+ "$BIN/ActionFlowCore.build/TriggerInterest.swift.o" \
  -o "$TMP/AppChecks"
 for LANGUAGE in en zh-Hans; do
  mkdir -p "$TMP/$LANGUAGE.lproj"
