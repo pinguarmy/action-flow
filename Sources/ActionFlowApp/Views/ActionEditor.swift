@@ -86,18 +86,10 @@ struct ActionEditor: View {
             }
             ForgeNote(text: "Opens the selected app. Use its bundle identifier, not a shell command.")
         case .menuCommand:
-            EditorField(title: "Menu path (JSON array)") {
-                TextEditor(text: $action.text)
-                    .font(.system(.caption, design: .monospaced))
-                    .frame(minHeight: 60, maxHeight: 120)
-                    .padding(5)
-                    .background(Color(nsColor: .textBackgroundColor))
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
-                    .overlay { RoundedRectangle(cornerRadius: 5).strokeBorder(.primary.opacity(0.12)) }
-                    .accessibilityLabel("Menu path JSON for action \(number)")
+            EditorField(title: "Menu path") {
+                MenuPathEditor(text: $action.text, number: number)
             }
-            MenuPathStatus(text: action.text)
-            ForgeNote(text: "Enter the exact menu titles as they appear in the app, including language, capitalization and punctuation, as a JSON array of 2 to 8 titles, for example [\"File\", \"New\"]. Unknown or misspelled titles make the action fail. Titles are never trimmed, guessed, or joined.")
+            ForgeNote(text: "Type each title exactly as the app shows it, including language, capitalization and punctuation; for example, an ellipsis \"…\" is not three dots. Use 2 to 8 levels. Unknown titles make the action fail. Titles are never trimmed or guessed.")
             ForgeNote(text: "Only the final menu item is pressed; parent menus are never opened automatically, so apps with dynamic submenus may be unavailable. Requires Accessibility permission.", symbol: "menubar.rectangle")
         case .delay:
             HStack {
@@ -139,20 +131,181 @@ struct ActionEditor: View {
     }
 }
 
-/// Live read-only status of the JSON menu path. Parses locally only; it never
+/// Row-per-title editor for a menu command path. `text` (the action's JSON
+/// payload) stays the single source of truth: rows are re-derived from it on
+/// every read and every edit writes it back as compact JSON. Titles are never
+/// trimmed or otherwise altered.
+private struct MenuPathEditor: View {
+    @Binding var text: String
+    let number: Int
+    @State private var showsJSON = false
+
+    /// Titles to show as rows, or nil when a non-empty payload is not a JSON
+    /// array of strings. A blank payload or an empty array shows two empty
+    /// rows without writing anything until the user types.
+    private var draftSegments: [String]? {
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return ["", ""] }
+        guard let segments = MenuCommandPath.draftSegments(from: text) else { return nil }
+        return segments.isEmpty ? ["", ""] : segments
+    }
+
+    private var isMalformed: Bool { draftSegments == nil }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let segments = draftSegments {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(segments.enumerated()), id: \.offset) { index, _ in
+                        row(index: index, count: segments.count)
+                    }
+                }
+                Button {
+                    addLevel()
+                } label: {
+                    Label(AppLocalization.text("Add level"), systemImage: "plus.circle")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+                .disabled(segments.count >= MenuCommandPath.maximumSegments)
+                .accessibilityLabel(AppLocalization.text("Add level"))
+            } else {
+                ForgeNote(text: "This menu path is not a list of titles. Edit the JSON below or start over.", symbol: "exclamationmark.triangle", warning: true)
+                Button(AppLocalization.text("Start over")) {
+                    text = MenuCommandPath.draftJSON(for: ["", ""])
+                }
+            }
+            MenuPathStatus(text: text)
+            DisclosureGroup(isExpanded: jsonExpanded) {
+                TextEditor(text: $text)
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(minHeight: 60, maxHeight: 120)
+                    .padding(5)
+                    .background(Color(nsColor: .textBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                    .overlay { RoundedRectangle(cornerRadius: 5).strokeBorder(.primary.opacity(0.12)) }
+                    .accessibilityLabel("Menu path JSON for action \(number)")
+                    .padding(.top, 4)
+            } label: {
+                Text(AppLocalization.text("Edit as JSON"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        // Latch the JSON editor open once the payload is malformed, so fixing it
+        // there does not collapse the editor (and drop focus) mid-typing.
+        .onChange(of: isMalformed, initial: true) { _, malformed in
+            if malformed { showsJSON = true }
+        }
+    }
+
+    private var jsonExpanded: Binding<Bool> {
+        Binding(
+            get: { showsJSON || isMalformed },
+            set: { showsJSON = $0 }
+        )
+    }
+
+    private func row(index: Int, count: Int) -> some View {
+        HStack(spacing: 8) {
+            Text(verbatim: String(index + 1))
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .frame(width: 16, alignment: .trailing)
+                .accessibilityHidden(true)
+            TextField(AppLocalization.text(index == 0 ? "Menu bar title" : "Menu item title"), text: titleBinding(at: index))
+                .textFieldStyle(.roundedBorder)
+                .accessibilityLabel(AppLocalization.format("Menu title, level %lld of action %lld", Int64(index + 1), Int64(number)))
+            Button {
+                removeLevel(at: index)
+            } label: {
+                Image(systemName: "minus.circle")
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+            .disabled(count <= MenuCommandPath.minimumSegments)
+            .accessibilityLabel(AppLocalization.format("Remove menu level %lld", Int64(index + 1)))
+            .help(AppLocalization.format("Remove menu level %lld", Int64(index + 1)))
+        }
+    }
+
+    /// Reads and writes one title by position. Both sides re-derive the current
+    /// titles from `text` instead of capturing an array that may be stale.
+    private func titleBinding(at index: Int) -> Binding<String> {
+        Binding(
+            get: {
+                guard let segments = draftSegments, segments.indices.contains(index) else { return "" }
+                return segments[index]
+            },
+            set: { newValue in
+                guard var segments = draftSegments, segments.indices.contains(index),
+                      segments[index] != newValue else { return }
+                segments[index] = newValue
+                write(segments)
+            }
+        )
+    }
+
+    private func addLevel() {
+        guard var segments = draftSegments, segments.count < MenuCommandPath.maximumSegments else { return }
+        segments.append("")
+        write(segments)
+    }
+
+    private func removeLevel(at index: Int) {
+        guard var segments = draftSegments, segments.count > MenuCommandPath.minimumSegments,
+              segments.indices.contains(index) else { return }
+        segments.remove(at: index)
+        write(segments)
+    }
+
+    /// Drops an edit whose JSON would exceed the payload limit: such text would
+    /// no longer decode as rows, and the row being typed in would disappear.
+    private func write(_ segments: [String]) {
+        let json = MenuCommandPath.draftJSON(for: segments)
+        guard json.utf8.count <= MenuCommandPath.maximumJSONBytes else { return }
+        text = json
+    }
+}
+
+/// Live read-only status of the menu path. Parses locally only; it never
 /// queries an application's menus, so it cannot confirm the titles exist.
 private struct MenuPathStatus: View {
     let text: String
 
+    private enum Outcome {
+        case untouched
+        case valid(Int)
+        case invalid(String)
+    }
+
+    private var outcome: Outcome {
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .untouched }
+        // A fresh path of empty rows (for example after "Start over") is not yet an error.
+        if let segments = MenuCommandPath.draftSegments(from: text), segments.allSatisfy({ $0.isEmpty }) {
+            return .untouched
+        }
+        do {
+            let path = try MenuCommandPath(parsing: text)
+            return .valid(path.segments.count)
+        } catch let error as MenuCommandPathError {
+            return .invalid(error.message)
+        } catch {
+            return .invalid(MenuCommandPathError.invalidJSON.message)
+        }
+    }
+
     var body: some View {
-        if let path = try? MenuCommandPath(parsing: text) {
+        switch outcome {
+        case .untouched:
+            ForgeNote(text: "Enter the menu bar title, then each submenu or item title.")
+        case .valid(let count):
             ForgeNote(
-                text: String(format: AppLocalization.text("%lld menu levels. Titles are checked only when the action runs, against the app's current menus."), Int64(path.segments.count)),
+                text: AppLocalization.format("%lld menu levels. Titles are checked only when the action runs, against the app's current menus.", Int64(count)),
                 symbol: "checkmark.circle",
                 localizesText: false
             )
-        } else {
-            ForgeNote(text: "Not a valid menu path yet. The rule cannot run until this parses.", symbol: "exclamationmark.triangle", warning: true)
+        case .invalid(let message):
+            ForgeNote(text: AppLocalization.text(message), symbol: "exclamationmark.triangle", warning: true, localizesText: false)
         }
     }
 }

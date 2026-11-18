@@ -671,3 +671,16 @@
 "The menu item changed before it could be pressed. Nothing was pressed." = "菜单项在按下前发生了变化，未按下任何菜单项。";
 "The application rejected the menu item press." = "应用拒绝了此次菜单项按下。";
 "Reading the menu took longer than the 10-second traversal limit. Nothing was pressed." = "读取菜单的时间超过了 10 秒的遍历上限，未按下任何菜单项。";
+
+/* 菜单路径逐级编辑器。 */
+"Menu path" = "菜单路径";
+"Menu bar title" = "菜单栏标题";
+"Menu item title" = "菜单项标题";
+"Add level" = "添加一级";
+"Start over" = "重新开始";
+"Edit as JSON" = "以 JSON 编辑";
+"Menu title, level %lld of action %lld" = "菜单标题，第 %lld 级（第 %lld 个操作）";
+"Remove menu level %lld" = "移除第 %lld 级菜单";
+"This menu path is not a list of titles. Edit the JSON below or start over." = "此菜单路径不是标题列表。请编辑下方的 JSON，或重新开始。";
+"Enter the menu bar title, then each submenu or item title." = "先输入菜单栏标题，再依次输入各级子菜单或菜单项的标题。";
+"Type each title exactly as the app shows it, including language, capitalization and punctuation; for example, an ellipsis \"…\" is not three dots. Use 2 to 8 levels. Unknown titles make the action fail. Titles are never trimmed or guessed." = "按应用中显示的样子逐字输入每个标题，包括语言、大小写和标点；例如省略号“…”不等于三个句点。可设置 2 到 8 级。标题未知时动作会失败。标题不会被裁剪或猜测。";

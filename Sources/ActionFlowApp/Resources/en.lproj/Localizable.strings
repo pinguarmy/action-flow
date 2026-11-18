@@ -671,3 +671,16 @@
 "The menu item changed before it could be pressed. Nothing was pressed." = "The menu item changed before it could be pressed. Nothing was pressed.";
 "The application rejected the menu item press." = "The application rejected the menu item press.";
 "Reading the menu took longer than the 10-second traversal limit. Nothing was pressed." = "Reading the menu took longer than the 10-second traversal limit. Nothing was pressed.";
+
+/* Menu path row editor. */
+"Menu path" = "Menu path";
+"Menu bar title" = "Menu bar title";
+"Menu item title" = "Menu item title";
+"Add level" = "Add level";
+"Start over" = "Start over";
+"Edit as JSON" = "Edit as JSON";
+"Menu title, level %lld of action %lld" = "Menu title, level %lld of action %lld";
+"Remove menu level %lld" = "Remove menu level %lld";
+"This menu path is not a list of titles. Edit the JSON below or start over." = "This menu path is not a list of titles. Edit the JSON below or start over.";
+"Enter the menu bar title, then each submenu or item title." = "Enter the menu bar title, then each submenu or item title.";
+"Type each title exactly as the app shows it, including language, capitalization and punctuation; for example, an ellipsis \"…\" is not three dots. Use 2 to 8 levels. Unknown titles make the action fail. Titles are never trimmed or guessed." = "Type each title exactly as the app shows it, including language, capitalization and punctuation; for example, an ellipsis \"…\" is not three dots. Use 2 to 8 levels. Unknown titles make the action fail. Titles are never trimmed or guessed.";
