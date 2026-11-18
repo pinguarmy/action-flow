@@ -684,3 +684,9 @@
 "This menu path is not a list of titles. Edit the JSON below or start over." = "此菜单路径不是标题列表。请编辑下方的 JSON，或重新开始。";
 "Enter the menu bar title, then each submenu or item title." = "先输入菜单栏标题，再依次输入各级子菜单或菜单项的标题。";
 "Type each title exactly as the app shows it, including language, capitalization and punctuation; for example, an ellipsis \"…\" is not three dots. Use 2 to 8 levels. Unknown titles make the action fail. Titles are never trimmed or guessed." = "按应用中显示的样子逐字输入每个标题，包括语言、大小写和标点；例如省略号“…”不等于三个句点。可设置 2 到 8 级。标题未知时动作会失败。标题不会被裁剪或猜测。";
+"Not saved yet. Fix these issues, then save again:" = "尚未保存。请先修正以下问题，再重新保存：";
+"…and %lld more." = "…另有 %lld 个问题。";
+"Not saved: fix 1 issue first" = "未保存：请先修正 1 个问题";
+"Not saved: fix %lld issues first" = "未保存：请先修正 %lld 个问题";
+"Unsaved changes" = "有未保存的修改";
+"All changes saved" = "所有修改均已保存";

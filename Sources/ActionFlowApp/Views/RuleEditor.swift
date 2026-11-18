@@ -105,6 +105,9 @@ struct RuleEditor: View {
             }
         }
         .onChange(of: rule.enabled) { _, _ in model.save() }
+        // Any edit to this rule (fields, advanced settings, action list) persists shortly after typing stops.
+        // A redundant save after the enabled-toggle save above early-returns because nothing changed.
+        .onChange(of: rule) { _, _ in model.scheduleAutosave() }
         .onDisappear {
             model.stopRecordingShortcut()
             model.save()
@@ -427,7 +430,11 @@ struct RuleEditor: View {
                     Label(AppLocalization.text("Preview…"), systemImage: "doc.text.magnifyingglass")
                 }
                 .help(AppLocalization.text("Inspect a redacted plan without running any actions"))
-                Button("Save", action: model.save)
+                if model.hasConfigurationLease {
+                    saveStateIndicator
+                        .layoutPriority(-1)
+                }
+                Button("Save") { model.saveExplicitly() }
                     .keyboardShortcut("s", modifiers: .command)
                     .buttonStyle(.borderedProminent)
                     .disabled(!model.hasConfigurationLease)
@@ -435,6 +442,39 @@ struct RuleEditor: View {
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 13)
+    }
+
+    /// Compact saved/unsaved state. Truncates before the footer buttons shrink.
+    private var saveStateIndicator: some View {
+        let blocked = model.unsavedIssueCount > 0 && model.hasUnsavedChanges
+        let text: String
+        let symbol: String?
+        if blocked {
+            text = model.unsavedIssueCount == 1
+                ? AppLocalization.text("Not saved: fix 1 issue first")
+                : AppLocalization.format("Not saved: fix %lld issues first", Int64(model.unsavedIssueCount))
+            symbol = "exclamationmark.triangle"
+        } else if model.hasUnsavedChanges {
+            text = AppLocalization.text("Unsaved changes")
+            symbol = nil
+        } else {
+            text = AppLocalization.text("All changes saved")
+            symbol = "checkmark.circle"
+        }
+        return HStack(spacing: 4) {
+            if let symbol {
+                Image(systemName: symbol)
+                    .accessibilityHidden(true)
+            }
+            Text(verbatim: text)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .font(.caption)
+        .foregroundStyle(blocked ? Color.orange : Color.secondary)
+        .help(text)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: text))
     }
 
     private func executionProgressView(_ progress: ExecutionProgress) -> some View {

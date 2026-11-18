@@ -32,20 +32,33 @@ final class InputMonitor {
     var onEvent: ((InputEvent) -> Void)?
     var onStatus: ((String) -> Void)?
     private(set) var running = false
+    /// The input kinds the current tap observes. Empty while stopped.
+    private(set) var interest: TriggerInterest = []
     private var tap: CFMachPort?
     private var source: CFRunLoopSource?
 
     static var hasInputMonitoringPermission: Bool { CGPreflightListenEventAccess() }
+    private static let inputKinds: TriggerInterest = [.keyboard, .mouseButtons, .scroll]
 
-    func start() {
-        guard !running else { return }
+    /// Observes only the event types the given interest needs. Recreates the tap when the
+    /// input interest changes; does nothing when it is unchanged or needs no input at all.
+    func start(interest requested: TriggerInterest = [.keyboard, .mouseButtons, .scroll]) {
+        let wanted = requested.intersection(Self.inputKinds)
+        if running {
+            if interest.intersection(Self.inputKinds) == wanted { return }
+            stop()
+        }
+        guard !wanted.isEmpty else { return }
         // Do not call CGRequestListenEventAccess here. Permission requests belong
         // to an explicit user command, not starting or restoring automation.
         guard Self.hasInputMonitoringPermission else {
             onStatus?(AppLocalization.text("Input Monitoring permission is required. Enable it in System Settings, then restart monitoring."))
             return
         }
-        let types: [CGEventType] = [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel]
+        var types: [CGEventType] = []
+        if wanted.contains(.keyboard) { types.append(.keyDown) }
+        if wanted.contains(.mouseButtons) { types.append(contentsOf: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) }
+        if wanted.contains(.scroll) { types.append(.scrollWheel) }
         let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
         guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .tailAppendEventTap,
                                          options: .listenOnly, eventsOfInterest: mask,
@@ -63,6 +76,7 @@ final class InputMonitor {
         self.source = source
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
+        interest = wanted
         running = true
         onStatus?(AppLocalization.text("Passive input monitoring is active. Secure input and system-reserved shortcuts may not be observable."))
     }
@@ -74,6 +88,7 @@ final class InputMonitor {
         source = nil
         tap = nil
         running = false
+        interest = []
     }
 
     fileprivate func receive(_ type: CGEventType, event: CGEvent) {

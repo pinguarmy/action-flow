@@ -30,7 +30,17 @@ public struct ActivityEntry: Identifiable {
 
 @MainActor
 final class AppModel: ObservableObject {
-    @Published var configuration: Configuration
+    @Published var configuration: Configuration {
+        didSet {
+            // Runs on every in-place edit, so it must stay cheap and must never save.
+            // The rules comparison is the only O(n) work; configureMonitor() never mutates configuration.
+            guard oldValue.rules != configuration.rules else { return }
+            let interest = TriggerInterest(rules: configuration.rules)
+            guard interest != triggerInterest else { return }
+            triggerInterest = interest
+            configureMonitor()
+        }
+    }
     @Published var selection: UUID?
     @Published var section: SidebarSection = .rules
     @Published var searchText = ""
@@ -43,6 +53,8 @@ final class AppModel: ObservableObject {
     @Published var isRecordingShortcut = false
     @Published var isExecuting = false
     @Published var executionProgress: ExecutionProgress?
+    /// Content problems that currently prevent the in-memory configuration from being written.
+    @Published private(set) var unsavedIssueCount = 0
     @Published private var lastExternalApplication: NSRunningApplication?
 
     private let store: ConfigurationStore
@@ -64,7 +76,15 @@ final class AppModel: ObservableObject {
     private var previousAutomationEnabled = false
     private var manualActivationTask: Task<Void, Never>?
     private var manualActivationID: UUID?
-    private var lastSavedConfiguration: Configuration?
+    /// Every assignment records a configuration that was just loaded or written, which by
+    /// construction passed the store's content validation, so no save-blocking issue remains.
+    private var lastSavedConfiguration: Configuration? {
+        didSet { if unsavedIssueCount != 0 { unsavedIssueCount = 0 } }
+    }
+    private var autosaveTask: Task<Void, Never>?
+    private var terminationObserver: NSObjectProtocol?
+    private var triggerInterest: TriggerInterest = []
+    private var conflictCache: (rules: [AutomationRule], messages: [String])?
 
     init(configurationURL: URL? = nil) {
         let url = configurationURL ?? Self.defaultConfigurationURL
@@ -79,6 +99,8 @@ final class AppModel: ObservableObject {
             configuration.allowScripts = false
             for index in configuration.rules.indices { configuration.rules[index].enabled = false }
         }
+        // `didSet` does not run for assignments inside init; seed the interest before any configureMonitor().
+        triggerInterest = TriggerInterest(rules: configuration.rules)
         if let app = NSWorkspace.shared.frontmostApplication, Self.isRegularTarget(app) { lastExternalApplication = app }
         selection = configuration.rules.first?.id
         persistedLaunchAtLogin = SMAppService.mainApp.status == .enabled
@@ -119,6 +141,15 @@ final class AppModel: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
+        timer?.tolerance = 0.2
+        // Termination must flush pending edits even when no window (and no SwiftUI observer) is alive.
+        // A Task would never run during termination, so run synchronously on the main queue.
+        terminationObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.shutdown()
+            }
+        }
         if configuration.automationEnabled { configureMonitor() }
     }
 
@@ -144,11 +175,23 @@ final class AppModel: ObservableObject {
         reconcileRuleSelection()
     }
     var conflictMessages: [String] {
-        RuleValidator.conflictPairs(in: configuration.rules).map { conflict in
+        // Views read this on every render. Recompute only when the rules change (locale is fixed at launch).
+        if let cache = conflictCache, cache.rules == configuration.rules { return cache.messages }
+        let messages = RuleValidator.conflictPairs(in: configuration.rules).map { conflict in
             AppLocalization.format("\"%@\" and \"%@\" share %@ in overlapping apps.",
                                    conflict.first.name, conflict.second.name, conflict.first.trigger.localizedSummary)
         }
+        conflictCache = (rules: configuration.rules, messages: messages)
+        return messages
     }
+    /// True when edits exist that are not on disk yet. False when nothing was ever loaded or saved
+    /// (that state has its own banner and alert handling).
+    var hasUnsavedChanges: Bool {
+        guard let lastSavedConfiguration else { return false }
+        return lastSavedConfiguration != configuration
+    }
+    /// Diagnostics/tests: the input kinds the enabled rules currently need.
+    var observedInputInterest: TriggerInterest { triggerInterest }
     var availableCapabilities: Set<AutomationCapability> {
         var available: Set<AutomationCapability> = []
         if permissions.accessibility { available.insert(.accessibility) }
@@ -186,7 +229,26 @@ final class AppModel: ObservableObject {
         if selection == id { selection = configuration.rules.first?.id }
         save()
     }
-    func save() {
+    /// Editor views call this after any edit. Never shows an alert for content issues.
+    func scheduleAutosave() {
+        autosaveTask?.cancel()
+        autosaveTask = nil
+        guard hasConfigurationLease && !persistenceBlocked else { return }
+        autosaveTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.autosaveTask = nil
+            guard self.hasConfigurationLease && !self.persistenceBlocked else { return }
+            self.save()
+        }
+    }
+    /// Save button and Command-S: report why a draft cannot be written yet.
+    func saveExplicitly() {
+        autosaveTask?.cancel()
+        autosaveTask = nil
+        save(announcingIssues: true)
+    }
+    func save(announcingIssues: Bool = false) {
         guard hasConfigurationLease else {
             configuration.automationEnabled = false
             configuration.allowScripts = false
@@ -203,12 +265,33 @@ final class AppModel: ObservableObject {
             stopExecution()
             return
         }
-        if configuration == lastSavedConfiguration { return }
-        // Changes in a live chain never take effect halfway through execution.
-        if previousAutomationEnabled && !configuration.automationEnabled { stopExecution() }
-        if previousAutomationEnabled != configuration.automationEnabled { scheduler.reset() }
-        scheduler.removeStaleRules(configuration.rules)
-        previousAutomationEnabled = configuration.automationEnabled
+        if configuration == lastSavedConfiguration {
+            if unsavedIssueCount != 0 { unsavedIssueCount = 0 }
+            return
+        }
+        let issues = ConfigurationStore.validationErrors(for: configuration)
+        if !issues.isEmpty {
+            // Nothing is written and nothing is paused: an in-progress draft is not a failure.
+            // Login-item changes stay pending until the next successful save. The runtime still
+            // follows the in-memory switches, and execute(_:) refuses any invalid rule.
+            synchronizeRuntimeWithConfiguration()
+            // Only ever lower the flag here (fail closed). execute(_:) reassigns it from the in-memory
+            // configuration before each run, so this mainly matters for anything reading it between runs.
+            if !configuration.allowScripts { executor.allowScripts = false }
+            configureMonitor()
+            unsavedIssueCount = issues.count
+            if announcingIssues {
+                var lines = [AppLocalization.text("Not saved yet. Fix these issues, then save again:")]
+                lines.append(contentsOf: issues.prefix(5).map { AppLocalization.validationMessage($0) })
+                if issues.count > 5 { lines.append(AppLocalization.format("…and %lld more.", Int64(issues.count - 5))) }
+                errorMessage = lines.joined(separator: "\n")
+            }
+            return
+        }
+        // Assigned unconditionally: the publish also refreshes views that derive hasUnsavedChanges from
+        // the unpublished lastSavedConfiguration once the synchronous write below completes.
+        unsavedIssueCount = 0
+        synchronizeRuntimeWithConfiguration()
         let previousLoginState = persistedLaunchAtLogin
         if configuration.launchAtLogin != persistedLaunchAtLogin {
             do {
@@ -241,9 +324,19 @@ final class AppModel: ObservableObject {
         executor.allowScripts = configuration.allowScripts
         configureMonitor()
     }
+    /// Shared by the written and not-written save paths.
+    private func synchronizeRuntimeWithConfiguration() {
+        // Changes in a live chain never take effect halfway through execution.
+        if previousAutomationEnabled && !configuration.automationEnabled { stopExecution() }
+        if previousAutomationEnabled != configuration.automationEnabled { scheduler.reset() }
+        scheduler.removeStaleRules(configuration.rules)
+        previousAutomationEnabled = configuration.automationEnabled
+    }
     func configureMonitor() {
-        if hasConfigurationLease && configuration.automationEnabled && permissions.inputMonitoring && SessionSafety.allowsExecution {
-            if !monitor.running { monitor.start() }
+        if hasConfigurationLease && configuration.automationEnabled && permissions.inputMonitoring && SessionSafety.allowsExecution
+            && triggerInterest.needsInputMonitoring {
+            // No-op when already running with the same input interest; recreates the tap otherwise.
+            monitor.start(interest: triggerInterest)
         } else { monitor.stop() }
     }
     func refreshPermissions() {
@@ -256,7 +349,8 @@ final class AppModel: ObservableObject {
                 self?.permissions.notifications = settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional
             }
         }
-        if !permissions.accessibility { statusMessage = AppLocalization.text("Window and keyboard actions require Accessibility permission.") }
+        // Do not clobber more specific recent status text each time the app becomes active.
+        if !permissions.accessibility && statusMessage == nil { statusMessage = AppLocalization.text("Window and keyboard actions require Accessibility permission.") }
         configureMonitorIfReady()
     }
     private func configureMonitorIfReady() { configureMonitor() }
@@ -471,6 +565,9 @@ final class AppModel: ObservableObject {
         if activity.count > 200 { activity.removeLast(activity.count - 200) }
     }
     private func handle(_ event: InputEvent) {
+        // Skip the scheduler pass for input no enabled rule can match. Mouse and scroll never affect a
+        // pending double-shortcut pair, and app activation invalidates pairs in the workspace observer.
+        guard triggerInterest.wants(event.kind) else { return }
         let context = currentExecutionContext
         guard eligibleForAutomaticExecution(context) else { return }
         let isLifecycle = event.kind == .appLaunched || event.kind == .appTerminated
@@ -505,7 +602,7 @@ final class AppModel: ObservableObject {
             if runningTask != nil || manualActivationTask != nil || pendingRules.count > 0 { stopExecution() }
             return
         }
-        if configuration.automationEnabled && permissions.inputMonitoring && !monitor.running { configureMonitor() }
+        if configuration.automationEnabled && permissions.inputMonitoring && triggerInterest.needsInputMonitoring && !monitor.running { configureMonitor() }
         let context = currentExecutionContext
         guard eligibleForAutomaticExecution(context) else { return }
         for rule in scheduler.intervalCandidates(rules: configuration.rules, context: context, now: ProcessInfo.processInfo.systemUptime) {
@@ -585,6 +682,12 @@ final class AppModel: ObservableObject {
         catch { errorMessage = AppLocalization.format("Export failed: %@", AppLocalization.describe(error)) }
     }
     func shutdown() {
+        // Flush pending edits first. Safe to call twice: the lease is released below, so a second call never saves.
+        autosaveTask?.cancel()
+        autosaveTask = nil
+        if hasConfigurationLease && !persistenceBlocked && hasUnsavedChanges { save() }
+        if let token = terminationObserver { NotificationCenter.default.removeObserver(token) }
+        terminationObserver = nil
         stopRecordingShortcut()
         stopExecution()
         monitor.stop()

@@ -12,9 +12,8 @@ struct ActionFlowApp: App {
         WindowGroup("ActionFlow", id: "main") {
             MainView()
                 .environmentObject(model)
-                .frame(minWidth: 1220, minHeight: 680)
-                .tint(Color(red: 0.17, green: 0.49, blue: 0.36))
-                .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.shutdown() }
+                // Minimum size and tint are declared once on MainView. AppModel observes
+                // willTerminate itself, so pending edits are flushed even with no window open.
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in model.refreshPermissions() }
                 .onAppear { delegate.reopenEditor = { openWindow(id: "main") } }
         }
@@ -22,7 +21,9 @@ struct ActionFlowApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("New Rule") { model.addRule() }.keyboardShortcut("n")
+                    .disabled(!model.hasConfigurationLease)
                 Button("Import Rules…") { model.importRules() }.keyboardShortcut("o")
+                    .disabled(!model.hasConfigurationLease)
                 Button("Export Rules…") { model.exportRules() }.keyboardShortcut("e", modifiers: [.command, .shift])
             }
             CommandMenu("Automation") {

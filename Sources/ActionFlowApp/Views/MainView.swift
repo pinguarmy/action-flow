@@ -40,7 +40,8 @@ struct MainView: View {
             .background(Color(nsColor: .windowBackgroundColor))
         }
         .tint(ForgeStyle.accent)
-        .frame(minWidth: 1220, minHeight: 680)
+        // The single declaration of the window minimum: sidebar 180 + rule list 250 + editor 440 + dividers.
+        .frame(minWidth: 960, minHeight: 620)
         .navigationTitle("ActionFlow")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {

@@ -181,6 +181,74 @@ struct AppChecks {
             pad.magnify(delta: 0.4, phase: [])
             pad.endGesture(phase: [])
             check(labModel.results.isEmpty && !labModel.isTracking, "threshold change interrupts session flags so later phaseless samples cannot restart mid-gesture")
+            // Gentle saving and autosave. Dedicated models and files so the main sequence is undisturbed.
+            let draftURL = dir.appendingPathComponent("draft-save.json")
+            let draftModel = AppModel(configurationURL: draftURL)
+            draftModel.errorMessage = nil
+            draftModel.configuration.rules[0].enabled = true
+            draftModel.configuration.automationEnabled = true
+            draftModel.save()
+            let draftSaved = try ConfigurationStore(url: draftURL).load()
+            check(draftModel.hasConfigurationLease && draftModel.errorMessage == nil && draftModel.unsavedIssueCount == 0 && !draftModel.hasUnsavedChanges
+                  && draftSaved == draftModel.configuration, "valid enabled draft fixture saves")
+            let draftBytes = try Data(contentsOf: draftURL)
+            draftModel.configuration.rules[0].name = ""
+            draftModel.save()
+            check(try Data(contentsOf: draftURL) == draftBytes && draftModel.errorMessage == nil && draftModel.unsavedIssueCount > 0 && draftModel.hasUnsavedChanges,
+                  "blocked draft save writes nothing and raises no alert")
+            check(draftModel.configuration.automationEnabled, "blocked draft save never pauses automation")
+            draftModel.saveExplicitly()
+            let bytesAfterExplicitSave = try Data(contentsOf: draftURL)
+            check(draftModel.errorMessage?.hasPrefix(AppLocalization.text("Not saved yet. Fix these issues, then save again:")) == true
+                  && bytesAfterExplicitSave == draftBytes, "explicit save explains blocking issues and still writes nothing")
+            draftModel.errorMessage = nil
+            draftModel.configuration.automationEnabled = false
+            draftModel.configuration.rules[0].name = "Draft fixed"
+            draftModel.save()
+            let fixedSaved = try ConfigurationStore(url: draftURL).load()
+            check(draftModel.unsavedIssueCount == 0 && !draftModel.hasUnsavedChanges && draftModel.errorMessage == nil
+                  && fixedSaved == draftModel.configuration, "fixed draft saves and clears the issue count")
+            draftModel.configuration.rules[0].name = "Autosaved name"
+            draftModel.scheduleAutosave()
+            let beforeAutosave = try ConfigurationStore(url: draftURL).load()
+            check(draftModel.hasUnsavedChanges && beforeAutosave.rules[0].name == "Draft fixed", "autosave waits before writing")
+            try await Task.sleep(nanoseconds: 2_500_000_000)
+            let afterAutosave = try ConfigurationStore(url: draftURL).load()
+            check(!draftModel.hasUnsavedChanges && afterAutosave == draftModel.configuration, "scheduled autosave persists a pending valid edit")
+            let bytesBeforeBlockedAutosave = try Data(contentsOf: draftURL)
+            draftModel.configuration.rules[0].name = " "
+            draftModel.scheduleAutosave()
+            try await Task.sleep(nanoseconds: 2_500_000_000)
+            let bytesAfterBlockedAutosave = try Data(contentsOf: draftURL)
+            check(draftModel.errorMessage == nil && draftModel.unsavedIssueCount > 0 && bytesAfterBlockedAutosave == bytesBeforeBlockedAutosave,
+                  "blocked autosave stays quiet and writes nothing")
+            draftModel.configuration.rules[0].name = "Autosaved name"
+            draftModel.save()
+            check(draftModel.unsavedIssueCount == 0 && !draftModel.hasUnsavedChanges, "reverting to the saved draft clears the issue count")
+            draftModel.shutdown()
+            let flushURL = dir.appendingPathComponent("flush-on-quit.json")
+            let flushModel = AppModel(configurationURL: flushURL)
+            flushModel.errorMessage = nil
+            flushModel.configuration.rules[0].name = "Flushed on quit"
+            check(flushModel.hasUnsavedChanges, "pending edit is reported as unsaved")
+            flushModel.shutdown()
+            flushModel.shutdown()
+            let flushed = try ConfigurationStore(url: flushURL).load()
+            check(flushed.rules.first?.name == "Flushed on quit" && !flushModel.hasConfigurationLease,
+                  "shutdown flushes a pending valid edit and is safe to repeat")
+            // Input interest follows enabled rules only; no permission prompt, tap or save is involved.
+            let interestURL = dir.appendingPathComponent("input-interest.json")
+            let interestModel = AppModel(configurationURL: interestURL)
+            interestModel.errorMessage = nil
+            let interestBytes = try? Data(contentsOf: interestURL)
+            check(interestModel.observedInputInterest == [], "disabled example rules need no input observation")
+            interestModel.configuration.rules = [AutomationRule(name: "Scroll fixture", enabled: true, trigger: Trigger(kind: .scroll, scrollDirection: .down),
+                                                                actions: [AutomationAction(kind: .delay, delaySeconds: 0)])]
+            check(interestModel.observedInputInterest == [.scroll] && !interestModel.observedInputInterest.wants(.shortcut), "enabled scroll rule needs only scroll input")
+            interestModel.configuration.rules[0].enabled = false
+            check(interestModel.observedInputInterest == [], "disabling the only input rule drops input interest")
+            check((try? Data(contentsOf: interestURL)) == interestBytes, "configuration mutation alone never writes")
+            interestModel.shutdown()
             model.configuration.rules = AutomationRule.exampleRules
             model.selection = model.configuration.rules.first?.id
             model.statusMessage = nil

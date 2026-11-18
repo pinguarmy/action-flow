@@ -684,3 +684,9 @@
 "This menu path is not a list of titles. Edit the JSON below or start over." = "This menu path is not a list of titles. Edit the JSON below or start over.";
 "Enter the menu bar title, then each submenu or item title." = "Enter the menu bar title, then each submenu or item title.";
 "Type each title exactly as the app shows it, including language, capitalization and punctuation; for example, an ellipsis \"…\" is not three dots. Use 2 to 8 levels. Unknown titles make the action fail. Titles are never trimmed or guessed." = "Type each title exactly as the app shows it, including language, capitalization and punctuation; for example, an ellipsis \"…\" is not three dots. Use 2 to 8 levels. Unknown titles make the action fail. Titles are never trimmed or guessed.";
+"Not saved yet. Fix these issues, then save again:" = "Not saved yet. Fix these issues, then save again:";
+"…and %lld more." = "…and %lld more.";
+"Not saved: fix 1 issue first" = "Not saved: fix 1 issue first";
+"Not saved: fix %lld issues first" = "Not saved: fix %lld issues first";
+"Unsaved changes" = "Unsaved changes";
+"All changes saved" = "All changes saved";
