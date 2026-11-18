@@ -11,3 +11,12 @@ A native macOS app for rule-based automation and action chains.
 Requires macOS 14+. Apple Silicon and Intel packages are available. Extract the ZIP or open the DMG, then drag `ActionFlow.app` into Applications. Global automation and scripts start off; grant system permissions yourself as needed.
 
 This is an ad-hoc-signed Alpha release, without Apple notarization. The in-app gesture lab does not provide global multi-finger gesture support.
+
+## Unreleased
+
+- Edits save automatically and are flushed when the app quits. The editor shows whether changes are saved.
+- An unfinished draft no longer raises an error or pauses automation; Save lists what to fix.
+- Menu commands are edited one title per row. The JSON form remains available.
+- Validation errors, rule summaries, conflict warnings, status and activity messages follow the interface language.
+- Input observation is limited to the input kinds enabled rules use.
+- The minimum window size is 960 × 620.

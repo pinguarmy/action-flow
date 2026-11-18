@@ -9,10 +9,11 @@ A native macOS automation app. Connect shortcuts, mouse input, scrolling, applic
 - Trigger rules with shortcuts, double-press shortcuts, mouse buttons, scrolling, app activation, launch or exit, and timers.
 - Combine window layouts, keyboard shortcuts, text insertion, application menu commands, app and URL opening, delays, notifications and optional shell scripts.
 - Organize rules with search, groups, templates, conflict warnings, action previews, execution progress, pause and cancellation.
+- Edits save automatically; a draft that is not valid yet stays in the editor without pausing automation.
 - Store rules as local JSON, with import, export, backups and snapshot recovery. Imported rules start disabled.
-- Use English or Simplified Chinese, following your system language.
+- Use English or Simplified Chinese, following your system language, including validation and activity messages.
 
-Input observation is passive: original keyboard and mouse events still reach the active app. The gesture lab recognizes swipes, magnification and rotation inside the app only; it does not provide global multi-finger gesture triggers.
+Input observation is passive: original keyboard and mouse events still reach the active app. Only the input kinds your enabled rules use are observed; with no keyboard, mouse or scroll rule enabled, nothing is. The gesture lab recognizes swipes, magnification and rotation inside the app only; it does not provide global multi-finger gesture triggers.
 
 ## Install
 
