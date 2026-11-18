@@ -444,4 +444,19 @@ final class ActionFlowCoreTests: XCTestCase {
         XCTAssertFalse(AutomationAction(kind: .shellScript, text: "secret command").summary.contains("secret"))
         XCTAssertEqual(KeyCodeLabel.label(for: 65535), "Key 65535")
     }
+
+    func testExtendedFunctionAndKeypadKeysHaveReadableLabels() {
+        XCTAssertEqual(KeyCodeLabel.label(for: 105), "F13")
+        XCTAssertEqual(KeyCodeLabel.label(for: 64), "F17")
+        XCTAssertEqual(KeyCodeLabel.label(for: 90), "F20")
+        XCTAssertEqual(KeyCodeLabel.label(for: 114), "Help")
+        XCTAssertEqual(KeyCodeLabel.label(for: 10), "§")
+        XCTAssertEqual(KeyCodeLabel.label(for: 76), "Keypad Enter")
+        XCTAssertEqual(KeyCodeLabel.label(for: 78), "Keypad −")
+        XCTAssertEqual(KeyCodeLabel.label(for: 82), "Keypad 0")
+        XCTAssertEqual(KeyCodeLabel.label(for: 92), "Keypad 9")
+        XCTAssertEqual(Trigger(keyCode: 113).summary, "⌃⌥F15")
+        XCTAssertEqual(KeyCodeLabel.label(for: 127), "Key 127")
+        XCTAssertEqual(KeyCodeLabel.label(for: 27), "−")
+    }
 }

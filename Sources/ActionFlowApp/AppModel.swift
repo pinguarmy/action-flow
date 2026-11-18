@@ -159,7 +159,21 @@ final class AppModel: ObservableObject {
     }
     var selectedRule: AutomationRule? { configuration.rules.first { $0.id == selection } }
     var filteredRules: [AutomationRule] {
-        RuleQuery(text:searchText,status:ruleStatusFilter,group:ruleGroupFilter).apply(to:configuration.rules)
+        RuleQuery(text:searchText,status:ruleStatusFilter,group:ruleGroupFilter).apply(to:configuration.rules,
+                                                                                         displayText: AppModel.searchableDisplayText)
+    }
+    /// Text the rule list shows: the localized trigger summary plus localized trigger and action kind titles.
+    /// Never includes action content (text, URLs, scripts, bundle identifiers).
+    nonisolated private static func searchableDisplayText(_ rule: AutomationRule) -> String {
+        var parts = [rule.trigger.localizedSummary, AppLocalization.text(rule.trigger.kind.title)]
+        parts.append(contentsOf: rule.actions.map { AppLocalization.text($0.kind.title) })
+        return parts.joined(separator: "\n")
+    }
+    /// Reorders rules in the unfiltered list. Offsets are positions in `configuration.rules`.
+    func moveRules(fromOffsets source: IndexSet, toOffset destination: Int) {
+        guard hasConfigurationLease else { return }
+        configuration.rules.move(fromOffsets: source, toOffset: destination)
+        save()
     }
     var availableRuleGroups: [String] { RuleQuery.groups(in:configuration.rules) }
     func reconcileRuleSelection() {

@@ -21,3 +21,6 @@ This is an ad-hoc-signed Alpha release, without Apple notarization. The in-app g
 - Single-press shortcut rules keep their key press from reaching the active app. This needs Accessibility permission and can be turned off per rule.
 - Input observation is limited to the input kinds enabled rules use.
 - The minimum window size is 960 × 620.
+- Window layouts no longer report a failure when an app such as Terminal rounds or limits the requested size.
+- Search matches the trigger and action names shown in the interface language. Rules can be reordered by dragging.
+- F13–F20 and keypad keys have readable names.

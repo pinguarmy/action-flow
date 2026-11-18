@@ -699,3 +699,6 @@
 "macOS could not create the input monitor. Check Input Monitoring permission. Secure input can hide keyboard events." = "macOS 无法创建输入监听。请检查“输入监控”权限。安全输入模式可能会隐藏键盘事件。";
 "Move and resize windows, send keyboard shortcuts and insert text into other apps. Also lets shortcut rules keep their key presses from reaching other apps." = "移动窗口、调整窗口大小，以及向其他应用发送快捷键和插入文本。还能让快捷键规则阻止其按键传给其他应用。";
 "Observe global keyboard, mouse button and scroll triggers. Mouse, scroll and double-press input still reach the original app. Single-press shortcut rules keep their key press unless set to pass it through." = "监听全局键盘、鼠标按键和滚动触发器。鼠标、滚动和双按快捷键的输入仍会传递给原应用。单按快捷键规则会保留其按键，除非设置为同时发送给应用。";
+"Keypad %@" = "小键盘 %@";
+"Enter" = "Enter";
+"Help" = "帮助";

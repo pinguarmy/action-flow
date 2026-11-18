@@ -93,21 +93,47 @@ final class WindowController {
         guard let positionValue = AXValueCreate(.cgPoint, &point), let sizeValue = AXValueCreate(.cgSize, &dimensions) else {
             throw RuntimeError.message(AppLocalization.text("Could not create the requested window geometry."))
         }
-        // Size first, then position. Applications may enforce minimum sizes.
+        let rejected = RuntimeError.message(AppLocalization.text("The application rejected part of the window change. Its frame may be partially changed."))
+        let tolerance: CGFloat = 4
+        // Order: size, position, then (only if needed) size again and position
+        // again. The first resize happens on the display the window currently
+        // occupies, which may clamp it (moving to a larger display, or growing
+        // near a screen edge); repeating the resize at the final position fixes
+        // that. Some applications move themselves when resized, so the origin
+        // is nudged once more if it drifted.
+        // A focus change between AX calls stops remaining writes. Earlier
+        // writes may already have happened and cannot be safely rolled back.
         try validateFocus()
-        let sizeResult = AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sizeValue)
-        // A focus change between AX calls stops remaining writes. The first
-        // resize may already have happened and cannot be safely rolled back.
+        var sizeAccepted = AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sizeValue) == .success
         try validateFocus()
-        let positionResult = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, positionValue)
-        guard sizeResult == .success, positionResult == .success else {
-            throw RuntimeError.message(AppLocalization.text("The application rejected part of the window change. Its frame may be partially changed."))
+        guard AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, positionValue) == .success else {
+            throw rejected
         }
         try validateFocus()
-        let actual = try self.frame(of: window)
-        guard abs(actual.minX - frame.minX) <= 4, abs(actual.minY - frame.minY) <= 4,
-              abs(actual.width - frame.width) <= 4, abs(actual.height - frame.height) <= 4 else {
-            throw RuntimeError.message(AppLocalization.text("The application constrained the requested window frame, for example because of a minimum size. The window may be partially changed."))
+        var actual = try self.frame(of: window)
+        if !sizeAccepted || abs(actual.width - frame.width) > tolerance || abs(actual.height - frame.height) > tolerance {
+            try validateFocus()
+            if AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sizeValue) == .success {
+                sizeAccepted = true
+            }
+            try validateFocus()
+            actual = try self.frame(of: window)
         }
+        guard sizeAccepted else { throw rejected }
+        if abs(actual.minX - frame.minX) > tolerance || abs(actual.minY - frame.minY) > tolerance {
+            try validateFocus()
+            guard AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, positionValue) == .success else {
+                throw rejected
+            }
+            try validateFocus()
+            actual = try self.frame(of: window)
+        }
+        // A remaining difference is the application's own constraint (minimum
+        // size, character-cell resize increments in Terminal or iTerm, and so
+        // on). The window did move and resize as far as the app allows, so this
+        // is accepted rather than reported as a failure that would abort the
+        // rest of the action chain. `frame(of:)` above still throws when the
+        // final geometry is invalid.
+        _ = actual
     }
 }

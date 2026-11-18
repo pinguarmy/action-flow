@@ -293,7 +293,14 @@ public enum KeyCodeLabel {
             96: "F5", 97: "F6", 98: "F7", 99: "F3", 100: "F8", 101: "F9", 103: "F11",
             109: "F10", 111: "F12", 115: "Home", 116: "Page Up", 117: "Forward Delete",
             118: "F4", 119: "End", 120: "F2", 121: "Page Down", 122: "F1",
-            123: "←", 124: "→", 125: "↓", 126: "↑"
+            123: "←", 124: "→", 125: "↓", 126: "↑",
+            // Carbon HIToolbox kVK_* codes for extended function keys, Help, ISO § and the keypad.
+            10: "§", 64: "F17", 79: "F18", 80: "F19", 90: "F20",
+            105: "F13", 106: "F16", 107: "F14", 113: "F15", 114: "Help",
+            65: "Keypad .", 67: "Keypad *", 69: "Keypad +", 71: "Keypad Clear", 75: "Keypad /",
+            76: "Keypad Enter", 78: "Keypad −", 81: "Keypad =",
+            82: "Keypad 0", 83: "Keypad 1", 84: "Keypad 2", 85: "Keypad 3", 86: "Keypad 4",
+            87: "Keypad 5", 88: "Keypad 6", 89: "Keypad 7", 91: "Keypad 8", 92: "Keypad 9"
         ]
         return labels[code] ?? "Key \(code)"
     }

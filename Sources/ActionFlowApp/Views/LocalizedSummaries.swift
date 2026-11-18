@@ -7,6 +7,12 @@ enum LocalizedKeyLabel {
     static func label(for keyCode: UInt16) -> String {
         let label = KeyCodeLabel.label(for: keyCode)
         if label == "Key \(keyCode)" { return AppLocalization.format("Key %lld", Int64(keyCode)) }
+        // "Keypad Clear", "Keypad 5", ...: localize the prefix and any word after it.
+        let keypadPrefix = "Keypad "
+        if label.hasPrefix(keypadPrefix) {
+            let rest = String(label.dropFirst(keypadPrefix.count))
+            return AppLocalization.format("Keypad %@", AppLocalization.text(rest))
+        }
         // Symbols and letters have no table entry and are returned unchanged.
         return AppLocalization.text(label)
     }

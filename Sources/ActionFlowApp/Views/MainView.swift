@@ -11,6 +11,15 @@ struct MainView: View {
         !model.searchText.isEmpty || model.ruleStatusFilter != .all || model.ruleGroupFilter != nil
     }
 
+    /// Drag to reorder only when the list shows every rule in stored order: with a filter active
+    /// the offsets would be positions in the filtered list, so dragging is disabled.
+    private var ruleMoveAction: ((IndexSet, Int) -> Void)? {
+        guard model.hasConfigurationLease && !hasActiveRuleFilters else { return nil }
+        return { source, destination in
+            model.moveRules(fromOffsets: source, toOffset: destination)
+        }
+    }
+
     var body: some View {
         NavigationSplitView {
             sidebar
@@ -313,6 +322,7 @@ struct MainView: View {
                                         .disabled(!model.hasConfigurationLease)
                                 }
                         }
+                        .onMove(perform: ruleMoveAction)
                     }
                     .listStyle(.inset)
                 }

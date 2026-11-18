@@ -96,6 +96,41 @@ final class RuleQueryTests: XCTestCase {
         XCTAssertEqual(chinese.group, "工作")
     }
 
+    func testDisplayTextSearchKeepsExistingFieldsAndAddsCallerText() {
+        let named = rule(name: "Meeting Notes", group: "Work")
+        let other = rule(name: "Window", group: "Tools")
+        let display: (AutomationRule) -> String = { $0.id == other.id ? "键盘快捷键 ⌃⌥←" : "" }
+        XCTAssertTrue(RuleQuery(text: "meeting").matches(named, displayText: display))
+        XCTAssertTrue(RuleQuery(text: "work").matches(named, displayText: display))
+        XCTAssertTrue(RuleQuery(text: "⌃⌥").matches(other, displayText: { _ in "" }), "English trigger summary still matches")
+        XCTAssertTrue(RuleQuery(text: "快捷键").matches(other, displayText: display))
+        XCTAssertFalse(RuleQuery(text: "快捷键").matches(other))
+        XCTAssertFalse(RuleQuery(text: "快捷键").matches(named, displayText: display))
+        XCTAssertEqual(RuleQuery(text: "快捷键").apply(to: [named, other], displayText: display), [other])
+        XCTAssertEqual(RuleQuery(text: "nothing").apply(to: [named, other], displayText: display), [])
+    }
+
+    func testEmptyTextNeverCallsDisplayTextClosure() {
+        let rules = [rule(name: "One"), rule(name: "Two", enabled: true)]
+        var calls = 0
+        let counted: (AutomationRule) -> String = { _ in calls += 1; return "" }
+        XCTAssertEqual(RuleQuery().apply(to: rules, displayText: counted), rules)
+        XCTAssertTrue(RuleQuery().matches(rules[0], displayText: counted))
+        XCTAssertEqual(calls, 0)
+    }
+
+    func testDisplayTextSearchStillAppliesStatusAndGroupFilters() {
+        let enabledWork = rule(name: "A", group: "Work", enabled: true)
+        let disabledWork = rule(name: "B", group: "Work")
+        let enabledHome = rule(name: "C", group: "Home", enabled: true)
+        let rules = [enabledWork, disabledWork, enabledHome]
+        let display: (AutomationRule) -> String = { _ in "显示文本" }
+        XCTAssertEqual(RuleQuery(text: "显示", status: .enabled).apply(to: rules, displayText: display), [enabledWork, enabledHome])
+        XCTAssertEqual(RuleQuery(text: "显示", group: "Work").apply(to: rules, displayText: display), [enabledWork, disabledWork])
+        XCTAssertEqual(RuleQuery(text: "显示", status: .disabled, group: "Home").apply(to: rules, displayText: display), [])
+        XCTAssertEqual(RuleQuery(status: .enabled, group: "Work").apply(to: rules, displayText: display), [enabledWork])
+    }
+
     func testFilterMetadataAndMutableQueryFields() {
         XCTAssertEqual(RuleStatusFilter.allCases.map(\.title), ["All states", "Enabled", "Disabled", "Needs attention"])
         for status in RuleStatusFilter.allCases { XCTAssertEqual(status.id, status.rawValue) }

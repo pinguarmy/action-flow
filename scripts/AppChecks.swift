@@ -24,7 +24,12 @@ struct AppChecks {
             let summaryTriggers = [Trigger(keyCode: 36), Trigger(kind: .doubleShortcut, keyCode: 120), Trigger(keyCode: 52),
                                    Trigger(kind: .mouseButton, mouseButton: 3), Trigger(kind: .scroll, scrollDirection: .left),
                                    Trigger(kind: .appActivated), Trigger(kind: .appTerminated, appBundleIdentifier: "com.example.fixture"),
-                                   Trigger(kind: .interval, intervalSeconds: 90)]
+                                   Trigger(kind: .interval, intervalSeconds: 90),
+                                   Trigger(keyCode: 105), Trigger(kind: .doubleShortcut, keyCode: 71), Trigger(keyCode: 83)]
+            check(LocalizedKeyLabel.label(for: 71) == AppLocalization.format("Keypad %@", AppLocalization.text("Clear"))
+                  && LocalizedKeyLabel.label(for: 83) == AppLocalization.format("Keypad %@", "1")
+                  && LocalizedKeyLabel.label(for: 105) == "F13" && LocalizedKeyLabel.label(for: 127) == AppLocalization.format("Key %lld", Int64(127)),
+                  "keypad and extended function keys have readable localized labels")
             let summaryActions = ActionKind.allCases.map { AutomationAction(kind: $0, text: "fixture", delaySeconds: 2) }
             let summaryPlan = ExecutionPlan(rule: AutomationRule(actions: summaryActions))
             let wrappedValidation = "Rule 2 (Name): with): Action 1: Enter text to use for this action."
@@ -140,6 +145,13 @@ struct AppChecks {
             model.clearRuleFilters()
             check(model.filteredRules.count == model.configuration.rules.count && model.configuration == rulesBeforeFiltering, "clearing filters restores visibility without modifying configuration")
             check(try Data(contentsOf:url) == diskBeforeFiltering, "model filter changes do not save or rotate backups")
+            let searchedRule = model.configuration.rules[0]
+            model.searchText = searchedRule.trigger.localizedSummary
+            check(!model.searchText.isEmpty && model.filteredRules.contains { $0.id == searchedRule.id }, "search matches the displayed localized trigger summary")
+            model.searchText = AppLocalization.text(searchedRule.trigger.kind.title)
+            check(model.filteredRules.contains { $0.id == searchedRule.id }, "search matches the localized trigger kind title")
+            model.clearRuleFilters()
+            check(model.filteredRules.count == model.configuration.rules.count && model.configuration == rulesBeforeFiltering, "clearing search restores every rule")
             model.configuration.automationEnabled = true
             model.handleSessionTransition(.willSleep)
             check(!model.configuration.automationEnabled && !SessionSafety.allowsExecution, "sleep transition pauses automation and blocks execution immediately")
@@ -282,6 +294,18 @@ struct AppChecks {
             let legacyLoaded = try ConfigurationStore(url: legacyURL).load()
             check(legacyLoaded.rules.count == 1 && legacyLoaded.rules.first?.trigger.passThrough == false,
                   "a legacy shortcut rule without passThrough keeps its key press")
+            // Drag-to-reorder persistence. Dedicated model and file so the main sequence is undisturbed.
+            let reorderURL = dir.appendingPathComponent("reorder.json")
+            let reorderModel = AppModel(configurationURL: reorderURL)
+            reorderModel.errorMessage = nil
+            let idsBeforeMove = reorderModel.configuration.rules.map(\.id)
+            check(idsBeforeMove.count >= 2 && reorderModel.hasConfigurationLease, "reorder fixture starts with several example rules")
+            reorderModel.moveRules(fromOffsets: IndexSet(integer: 0), toOffset: idsBeforeMove.count)
+            let idsAfterMove = reorderModel.configuration.rules.map(\.id)
+            check(idsAfterMove == Array(idsBeforeMove.dropFirst()) + [idsBeforeMove[0]], "moving the first rule to the end changes the order")
+            check(Set(idsAfterMove) == Set(idsBeforeMove) && idsAfterMove.count == idsBeforeMove.count, "reordering keeps every rule and identity")
+            check(try ConfigurationStore(url: reorderURL).load().rules.map(\.id) == idsAfterMove, "the new rule order is saved and reloaded")
+            reorderModel.shutdown()
             model.configuration.rules = AutomationRule.exampleRules
             model.selection = model.configuration.rules.first?.id
             model.statusMessage = nil
