@@ -71,9 +71,9 @@ final class AppModel: ObservableObject {
         store = ConfigurationStore(url: url)
         var loadError: String?
         do { configurationLease = try ConfigurationLease(configurationURL:url) }
-        catch { loadError = "This configuration is unavailable for writing. Automation is disabled in this instance. \(error.localizedDescription)" }
+        catch { loadError = AppLocalization.format("This configuration is unavailable for writing. Automation is disabled in this instance. %@", AppLocalization.describe(error)) }
         do { configuration = try store.load() }
-        catch { configuration = Configuration(); loadError = "Your saved configuration could not be loaded. The original file was left untouched. \(error.localizedDescription)" }
+        catch { configuration = Configuration(); loadError = AppLocalization.format("Your saved configuration could not be loaded. The original file was left untouched. %@", AppLocalization.describe(error)) }
         if configurationLease == nil {
             configuration.automationEnabled = false
             configuration.allowScripts = false
@@ -143,7 +143,12 @@ final class AppModel: ObservableObject {
         ruleGroupFilter = nil
         reconcileRuleSelection()
     }
-    var conflictMessages: [String] { RuleValidator.conflicts(in: configuration.rules) }
+    var conflictMessages: [String] {
+        RuleValidator.conflictPairs(in: configuration.rules).map { conflict in
+            AppLocalization.format("\"%@\" and \"%@\" share %@ in overlapping apps.",
+                                   conflict.first.name, conflict.second.name, conflict.first.trigger.localizedSummary)
+        }
+    }
     var availableCapabilities: Set<AutomationCapability> {
         var available: Set<AutomationCapability> = []
         if permissions.accessibility { available.insert(.accessibility) }
@@ -159,7 +164,7 @@ final class AppModel: ObservableObject {
 
     func addRule() {
         clearRuleFilters()
-        let rule = AutomationRule(name: "Untitled rule")
+        let rule = AutomationRule(name: AppLocalization.text("Untitled rule"))
         configuration.rules.append(rule)
         selection = rule.id
         section = .rules
@@ -169,7 +174,7 @@ final class AppModel: ObservableObject {
         clearRuleFilters()
         var copy = rule
         copy.id = UUID()
-        copy.name += " copy"
+        copy.name = AppLocalization.format("%@ copy", copy.name)
         copy.enabled = false
         for i in copy.actions.indices { copy.actions[i].id = UUID() }
         configuration.rules.append(copy)
@@ -185,7 +190,7 @@ final class AppModel: ObservableObject {
         guard hasConfigurationLease else {
             configuration.automationEnabled = false
             configuration.allowScripts = false
-            errorMessage = "Saving is disabled in this instance. Close the other instance using this configuration and restart ActionFlow."
+            errorMessage = AppLocalization.text("Saving is disabled in this instance. Close the other instance using this configuration and restart ActionFlow.")
             monitor.stop()
             stopExecution()
             return
@@ -193,7 +198,7 @@ final class AppModel: ObservableObject {
         guard !persistenceBlocked else {
             configuration.automationEnabled = false
             configuration.allowScripts = false
-            errorMessage = "Saving is disabled because the existing configuration could not be read. Export new work to a different file, then recover the original configuration before restarting."
+            errorMessage = AppLocalization.text("Saving is disabled because the existing configuration could not be read. Export new work to a different file, then recover the original configuration before restarting.")
             monitor.stop()
             stopExecution()
             return
@@ -212,7 +217,7 @@ final class AppModel: ObservableObject {
                 persistedLaunchAtLogin = configuration.launchAtLogin
             } catch {
                 configuration.launchAtLogin = persistedLaunchAtLogin
-                errorMessage = "Login item could not be changed: \(error.localizedDescription)"
+                errorMessage = AppLocalization.format("Login item could not be changed: %@", AppLocalization.describe(error))
             }
         }
         do { try store.save(configuration); lastSavedConfiguration = configuration }
@@ -223,12 +228,12 @@ final class AppModel: ObservableObject {
                     if previousLoginState { try SMAppService.mainApp.register() }
                     else { try SMAppService.mainApp.unregister() }
                     persistedLaunchAtLogin = previousLoginState
-                } catch { rollbackMessage = " Login item rollback also failed; review Login Items in System Settings." }
+                } catch { rollbackMessage = " " + AppLocalization.text("Login item rollback also failed; review Login Items in System Settings.") }
                 configuration.launchAtLogin = SMAppService.mainApp.status == .enabled
             }
             configuration.automationEnabled = false
             previousAutomationEnabled = false
-            errorMessage = "Could not save configuration. Automation was paused: \(error.localizedDescription)\(rollbackMessage)"
+            errorMessage = AppLocalization.format("Could not save configuration. Automation was paused: %@", AppLocalization.describe(error)) + rollbackMessage
             monitor.stop()
             stopExecution()
             return
@@ -251,7 +256,7 @@ final class AppModel: ObservableObject {
                 self?.permissions.notifications = settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional
             }
         }
-        if !permissions.accessibility { statusMessage = "Window and keyboard actions require Accessibility permission." }
+        if !permissions.accessibility { statusMessage = AppLocalization.text("Window and keyboard actions require Accessibility permission.") }
         configureMonitorIfReady()
     }
     private func configureMonitorIfReady() { configureMonitor() }
@@ -269,8 +274,8 @@ final class AppModel: ObservableObject {
             do {
                 let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
                 permissions.notifications = granted
-                statusMessage = granted ? "Notifications are authorized." : "Notifications were not authorized. You can change this in System Settings."
-            } catch { errorMessage = "Notification permission could not be requested: \(error.localizedDescription)" }
+                statusMessage = AppLocalization.text(granted ? "Notifications are authorized." : "Notifications were not authorized. You can change this in System Settings.")
+            } catch { errorMessage = AppLocalization.format("Notification permission could not be requested: %@", AppLocalization.describe(error)) }
         }
     }
     private func openPrivacyPane(_ anchor: String) {
@@ -281,25 +286,25 @@ final class AppModel: ObservableObject {
     }
     var manualTargetDescription: String {
         guard let app = lastExternalApplication, Self.isRegularTarget(app) else { return AppLocalization.text("No previous application is available. Switch to the intended target, then return to ActionFlow.") }
-        return String(format: AppLocalization.text("%@ will be activated for this manual run."), app.localizedName ?? app.bundleIdentifier ?? "Previous application")
+        return String(format: AppLocalization.text("%@ will be activated for this manual run."), app.localizedName ?? app.bundleIdentifier ?? AppLocalization.text("Previous application"))
     }
     func runRule(_ rule: AutomationRule) {
-        guard hasConfigurationLease else { appendActivity(rule.name,"Not run: this instance does not own the configuration writer lease.",false); return }
-        guard SessionSafety.allowsExecution else { appendActivity(rule.name, "Not run: the desktop session is locked or unavailable.", false); return }
-        guard !isExecuting, manualActivationTask == nil else { appendActivity(rule.name, "Not run: another action chain is running or preparing.", false); return }
-        guard RuleValidator.validate(rule).isEmpty else { appendActivity(rule.name, "Not run: fix rule validation errors first.", false); return }
+        guard hasConfigurationLease else { appendActivity(rule.name, AppLocalization.text("Not run: this instance does not own the configuration writer lease."), false); return }
+        guard SessionSafety.allowsExecution else { appendActivity(rule.name, AppLocalization.text("Not run: the desktop session is locked or unavailable."), false); return }
+        guard !isExecuting, manualActivationTask == nil else { appendActivity(rule.name, AppLocalization.text("Not run: another action chain is running or preparing."), false); return }
+        guard RuleValidator.validate(rule).isEmpty else { appendActivity(rule.name, AppLocalization.text("Not run: fix rule validation errors first."), false); return }
         let missing = missingCapabilities(for: rule, automatic: false)
-        guard missing.isEmpty else { appendActivity(rule.name, "Not run: missing " + missing.map(\.title).joined(separator: ", ") + ". Review Permissions and Settings.", false); return }
+        guard missing.isEmpty else { appendActivity(rule.name, AppLocalization.format("Not run: missing %@. Review Permissions and Settings.", missing.map { AppLocalization.text($0.title) }.joined(separator: ", ")), false); return }
         let current = NSWorkspace.shared.frontmostApplication
         let target = current?.bundleIdentifier == Bundle.main.bundleIdentifier ? lastExternalApplication : current
         guard let target, Self.isRegularTarget(target) else {
-            appendActivity(rule.name, "Not run: switch to the intended target application, then return to ActionFlow.", false); return
+            appendActivity(rule.name, AppLocalization.text("Not run: switch to the intended target application, then return to ActionFlow."), false); return
         }
-        guard rule.conditions.matches(bundleIdentifier: target.bundleIdentifier ?? "") else { appendActivity(rule.name, "Not run: application conditions do not match the target.", false); return }
+        guard rule.conditions.matches(bundleIdentifier: target.bundleIdentifier ?? "") else { appendActivity(rule.name, AppLocalization.text("Not run: application conditions do not match the target."), false); return }
         stopRecordingShortcut()
         // Activation is disclosed in the manual-run confirmation. Global rules never refocus a target.
         if NSWorkspace.shared.frontmostApplication?.processIdentifier != target.processIdentifier {
-            guard target.activate(options: []) else { appendActivity(rule.name, "The target application could not be activated.", false); return }
+            guard target.activate(options: []) else { appendActivity(rule.name, AppLocalization.text("The target application could not be activated."), false); return }
         }
         let activationID = UUID()
         manualActivationID = activationID
@@ -317,11 +322,11 @@ final class AppModel: ObservableObject {
                 if NSWorkspace.shared.frontmostApplication?.processIdentifier == target.processIdentifier { self.execute(rule); return }
                 do { try await Task.sleep(nanoseconds: 50_000_000) } catch { return }
             }
-            self.appendActivity(rule.name, "The target did not become active within two seconds. No actions were run.", false)
+            self.appendActivity(rule.name, AppLocalization.text("The target did not become active within two seconds. No actions were run."), false)
         }
     }
     func addTemplate(_ template: RuleTemplate) {
-        guard !persistenceBlocked else { errorMessage = "Recover the saved configuration before adding a template."; return }
+        guard !persistenceBlocked else { errorMessage = AppLocalization.text("Recover the saved configuration before adding a template."); return }
         // Adding a pack is a persistence operation only, never an execution request.
         let rules = template.makeRules()
         var candidate = configuration
@@ -333,25 +338,25 @@ final class AppModel: ObservableObject {
             clearRuleFilters()
             selection = rules.first?.id
             scheduler.removeStaleRules(configuration.rules)
-            statusMessage = "Added \(rules.count) disabled template rules. Automation and script settings were not changed."
+            statusMessage = AppLocalization.format("Added %lld disabled template rules. Automation and script settings were not changed.", Int64(rules.count))
             errorMessage = nil
-        } catch { errorMessage = "Template was not added: \(error.localizedDescription)" }
+        } catch { errorMessage = AppLocalization.format("Template was not added: %@", AppLocalization.describe(error)) }
     }
     @Published var snapshots: [ConfigurationSnapshot] = []
     func refreshSnapshots() {
         do { snapshots = try store.listSnapshots() }
-        catch { errorMessage = "Could not read snapshot history: \(error.localizedDescription)" }
+        catch { errorMessage = AppLocalization.format("Could not read snapshot history: %@", AppLocalization.describe(error)) }
     }
     func createSnapshot() {
-        guard !persistenceBlocked else { errorMessage = "Recover the saved configuration before creating a snapshot."; return }
+        guard !persistenceBlocked else { errorMessage = AppLocalization.text("Recover the saved configuration before creating a snapshot."); return }
         do {
             _ = try store.createSnapshot(configuration: configuration)
             snapshots = try store.listSnapshots()
-            statusMessage = "Private configuration snapshot created. No rules were run."
-        } catch { errorMessage = "Snapshot failed: \(error.localizedDescription)" }
+            statusMessage = AppLocalization.text("Private configuration snapshot created. No rules were run.")
+        } catch { errorMessage = AppLocalization.format("Snapshot failed: %@", AppLocalization.describe(error)) }
     }
     func restoreSnapshot(_ snapshot: ConfigurationSnapshot) {
-        guard hasConfigurationLease else { errorMessage = "Snapshot restore is disabled in this instance because another writer owns the configuration."; return }
+        guard hasConfigurationLease else { errorMessage = AppLocalization.text("Snapshot restore is disabled in this instance because another writer owns the configuration."); return }
         prepareForRecovery()
         do {
             let restored = try store.restoreSnapshot(id: snapshot.id)
@@ -366,9 +371,9 @@ final class AppModel: ObservableObject {
             selection = configuration.rules.first?.id
             scheduler.reset()
             errorMessage = nil
-            statusMessage = "Snapshot restored with every rule disabled." + (restored.preservedCurrentFileURL.map { " Previous file preserved at \($0.lastPathComponent)." } ?? "")
+            statusMessage = AppLocalization.text("Snapshot restored with every rule disabled.") + (restored.preservedCurrentFileURL.map { " " + AppLocalization.format("Previous file preserved at %@.", $0.lastPathComponent) } ?? "")
             snapshots = try store.listSnapshots()
-        } catch { errorMessage = "Snapshot restore failed: \(error.localizedDescription)" }
+        } catch { errorMessage = AppLocalization.format("Snapshot restore failed: %@", AppLocalization.describe(error)) }
     }
     var canRestoreBackup: Bool { FileManager.default.fileExists(atPath: store.backupURL.path) }
     private func prepareForRecovery() {
@@ -382,7 +387,7 @@ final class AppModel: ObservableObject {
         scheduler.reset()
     }
     func restorePreviousBackup() {
-        guard hasConfigurationLease else { errorMessage = "Backup restore is disabled in this instance because another writer owns the configuration."; return }
+        guard hasConfigurationLease else { errorMessage = AppLocalization.text("Backup restore is disabled in this instance because another writer owns the configuration."); return }
         prepareForRecovery()
         do {
             let restored = try store.restoreBackup()
@@ -396,21 +401,21 @@ final class AppModel: ObservableObject {
             selection = configuration.rules.first?.id
             scheduler.reset()
             errorMessage = nil
-            statusMessage = "Previous backup restored with every rule disabled." + (restored.preservedCurrentFileURL.map { " Previous file preserved at \($0.lastPathComponent)." } ?? "")
-        } catch { errorMessage = "Backup restore failed. Review the saved files before retrying: \(error.localizedDescription)" }
+            statusMessage = AppLocalization.text("Previous backup restored with every rule disabled.") + (restored.preservedCurrentFileURL.map { " " + AppLocalization.format("Previous file preserved at %@.", $0.lastPathComponent) } ?? "")
+        } catch { errorMessage = AppLocalization.format("Backup restore failed. Review the saved files before retrying: %@", AppLocalization.describe(error)) }
     }
     func revealConfigurationFolder() {
         let directory = store.url.deletingLastPathComponent()
         do { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true); NSWorkspace.shared.open(directory) }
-        catch { errorMessage = "Could not open the configuration folder: \(error.localizedDescription)" }
+        catch { errorMessage = AppLocalization.format("Could not open the configuration folder: %@", AppLocalization.describe(error)) }
     }
     private func execute(_ rule: AutomationRule) {
         guard hasConfigurationLease else { return }
         let errors = RuleValidator.validate(rule)
-        guard errors.isEmpty else { appendActivity(rule.name, errors.joined(separator: " "), false); return }
+        guard errors.isEmpty else { appendActivity(rule.name, errors.map { AppLocalization.validationMessage($0) }.joined(separator: " "), false); return }
         let missing = missingCapabilities(for: rule, automatic: false)
-        guard missing.isEmpty else { appendActivity(rule.name, "Skipped: missing " + missing.map(\.title).joined(separator: ", ") + ". No actions were run.", false); return }
-        guard runningTask == nil else { appendActivity(rule.name, "Skipped: another action chain is running.", false); return }
+        guard missing.isEmpty else { appendActivity(rule.name, AppLocalization.format("Skipped: missing %@. No actions were run.", missing.map { AppLocalization.text($0.title) }.joined(separator: ", ")), false); return }
+        guard runningTask == nil else { appendActivity(rule.name, AppLocalization.text("Skipped: another action chain is running."), false); return }
         executor.allowScripts = configuration.allowScripts
         executionProgress = nil
         executor.onProgress = { [weak self] progress in self?.executionProgress = progress }
@@ -428,7 +433,7 @@ final class AppModel: ObservableObject {
                 let result = try await self.executor.execute(rule.actions)
                 self.appendActivity(rule.name, result, true, progress: self.executionProgress)
             } catch {
-                self.appendActivity(rule.name, error.localizedDescription, false, progress: self.executionProgress)
+                self.appendActivity(rule.name, AppLocalization.describe(error), false, progress: self.executionProgress)
             }
         }
     }
@@ -490,7 +495,7 @@ final class AppModel: ObservableObject {
         statusMessage = AppLocalization.text("Automation was paused for a sleep or session change. Review your target and resume explicitly when ready.")
         if wasEnabled && !persistenceBlocked {
             do { try store.save(configuration); lastSavedConfiguration = configuration }
-            catch { errorMessage = "Automation remains paused in memory, but the paused state could not be saved: \(error.localizedDescription)" }
+            catch { errorMessage = AppLocalization.format("Automation remains paused in memory, but the paused state could not be saved: %@", AppLocalization.describe(error)) }
         }
     }
     private func tick() {
@@ -568,16 +573,16 @@ final class AppModel: ObservableObject {
             try store.save(candidate)
             configuration = candidate
             lastSavedConfiguration = candidate
-            statusMessage = "Imported \(incoming.rules.count) rules, all disabled. Review before enabling."
-        } catch { errorMessage = "Import failed. Existing rules were kept. \(error.localizedDescription)" }
+            statusMessage = AppLocalization.format("Imported %lld rules, all disabled. Review before enabling.", Int64(incoming.rules.count))
+        } catch { errorMessage = AppLocalization.format("Import failed. Existing rules were kept. %@", AppLocalization.describe(error)) }
     }
     func exportRules() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
         panel.nameFieldStringValue = "ActionFlow-rules.json"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { try store.exportConfiguration(configuration, to: url); statusMessage = "Exported \(configuration.rules.count) rules. Scripts may contain personal data; review before sharing." }
-        catch { errorMessage = "Export failed: \(error.localizedDescription)" }
+        do { try store.exportConfiguration(configuration, to: url); statusMessage = AppLocalization.format("Exported %lld rules. Scripts may contain personal data; review before sharing.", Int64(configuration.rules.count)) }
+        catch { errorMessage = AppLocalization.format("Export failed: %@", AppLocalization.describe(error)) }
     }
     func shutdown() {
         stopRecordingShortcut()

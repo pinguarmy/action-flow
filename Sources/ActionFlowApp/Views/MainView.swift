@@ -402,7 +402,7 @@ private struct RuleListRow: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                Text(rule.trigger.summary)
+                Text(rule.trigger.localizedSummary)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -417,6 +417,6 @@ private struct RuleListRow: View {
         }
         .padding(.vertical, 8)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(rule.name), \(rule.enabled ? "enabled" : "disabled"), \(rule.trigger.summary), \(rule.actions.count) actions")
+        .accessibilityLabel(AppLocalization.format("%@, %@, %@, %lld actions", rule.name, AppLocalization.text(rule.enabled ? "enabled" : "disabled"), rule.trigger.localizedSummary, Int64(rule.actions.count)))
     }
 }

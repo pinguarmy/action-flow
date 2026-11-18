@@ -234,12 +234,12 @@ struct RuleEditor: View {
                     ForgeNote(text: "Both key presses still reach the active app. A single-press rule using the same shortcut may also run.")
                 }
                 HStack(spacing: 12) {
-                    Text(model.isRecordingShortcut ? AppLocalization.text("Press a shortcut…") : rule.trigger.summary)
+                    Text(model.isRecordingShortcut ? AppLocalization.text("Press a shortcut…") : rule.trigger.localizedSummary)
                         .font(.system(size: 15, weight: .medium, design: .monospaced))
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(12)
                         .background(ForgeStyle.accent.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
-                        .accessibilityLabel("Recorded shortcut: \(rule.trigger.summary)")
+                        .accessibilityLabel(AppLocalization.format("Recorded shortcut: %@", rule.trigger.localizedSummary))
                     Button(AppLocalization.text(model.isRecordingShortcut ? "Cancel" : "Record")) {
                         if model.isRecordingShortcut { model.stopRecordingShortcut() }
                         else { model.startRecordingShortcut() }
@@ -417,7 +417,7 @@ struct RuleEditor: View {
                         Label("Run now…", systemImage: "play")
                     }
                     .disabled(!model.hasConfigurationLease || !errors.isEmpty || !missingManualCapabilities.isEmpty)
-                    .help(missingManualCapabilities.isEmpty ? "Run real actions on \(model.manualTargetDescription). A confirmation is shown first." : "Missing: \(missingManualSummary). Target: \(model.manualTargetDescription).")
+                    .help(missingManualCapabilities.isEmpty ? AppLocalization.format("Run real actions on %@. A confirmation is shown first.", model.manualTargetDescription) : AppLocalization.format("Missing: %@. Target: %@.", missingManualSummary, model.manualTargetDescription))
                 }
                 Spacer()
                 Button {
@@ -473,7 +473,7 @@ struct RuleEditor: View {
         VStack(alignment: .leading, spacing: 9) {
             Text(AppLocalization.text(title)).font(.callout.weight(.semibold))
             ForEach(Array(messages.enumerated()), id: \.offset) { _, message in
-                ForgeNote(text: message, symbol: "exclamationmark.triangle", warning: warning, localizesText: false)
+                ForgeNote(text: AppLocalization.validationMessage(message), symbol: "exclamationmark.triangle", warning: warning, localizesText: false)
             }
         }
         .padding(14)
@@ -537,7 +537,7 @@ struct ExecutionPlanPreview: View {
                                     VStack(alignment: .leading, spacing: 5) {
                                         Text(AppLocalization.text(step.title))
                                             .font(.callout.weight(.semibold))
-                                        Text(AppLocalization.text(step.summary))
+                                        Text(step.localizedSummary)
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                             .fixedSize(horizontal: false, vertical: true)
@@ -576,11 +576,10 @@ struct ExecutionPlanPreview: View {
                         .font(.headline)
                         .foregroundStyle(plan.validationErrors.isEmpty ? ForgeStyle.accent : Color.orange)
                         ForEach(Array(plan.validationErrors.enumerated()), id: \.offset) { _, error in
-                            ForgeNote(text: error, symbol: "exclamationmark.circle", warning: true, localizesText: false)
+                            ForgeNote(text: AppLocalization.validationMessage(error), symbol: "exclamationmark.circle", warning: true, localizesText: false)
                         }
                         ForgeNote(text: "Validation does not check live permissions, app availability or the current target. This preview is not a test run.")
                     }
-                    ForgeNote(text: "Detailed step summaries and validation messages may appear in English.")
                 }
                 .padding(24)
             }
@@ -634,14 +633,14 @@ private struct ApplicationScopeEditor: View {
             HStack {
                 TextField("com.apple.Safari", text: $draft)
                     .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("\(title) bundle identifier")
+                    .accessibilityLabel(AppLocalization.format("%@ bundle identifier", AppLocalization.text(title)))
                     .onSubmit(addDraft)
                 Button("Add", action: addDraft)
                     .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 Button("Choose…") {
                     if let identifier = chooseApplicationIdentifier() { add(identifier) }
                 }
-                .accessibilityLabel("Choose application for \(title.lowercased())")
+                .accessibilityLabel(AppLocalization.format("Choose application for %@", AppLocalization.text(title).lowercased()))
             }
         }
     }

@@ -21,6 +21,26 @@ struct AppChecks {
                 check(AppLocalization.text("Rules") == "Rules", "English localization fallback remains stable")
             }
             check(AppLocalization.text("User rule text 12345") == "User rule text 12345", "unknown user content is not rewritten")
+            let summaryTriggers = [Trigger(keyCode: 36), Trigger(kind: .doubleShortcut, keyCode: 120), Trigger(keyCode: 52),
+                                   Trigger(kind: .mouseButton, mouseButton: 3), Trigger(kind: .scroll, scrollDirection: .left),
+                                   Trigger(kind: .appActivated), Trigger(kind: .appTerminated, appBundleIdentifier: "com.example.fixture"),
+                                   Trigger(kind: .interval, intervalSeconds: 90)]
+            let summaryActions = ActionKind.allCases.map { AutomationAction(kind: $0, text: "fixture", delaySeconds: 2) }
+            let summaryPlan = ExecutionPlan(rule: AutomationRule(actions: summaryActions))
+            let wrappedValidation = "Rule 2 (Name): with): Action 1: Enter text to use for this action."
+            if AppLocalization.forcedLanguage == "zh-Hans" {
+                check(Trigger(kind: .interval, intervalSeconds: 90).localizedSummary != Trigger(kind: .interval, intervalSeconds: 90).summary
+                      && summaryPlan.steps.contains { $0.kind == .insertText && $0.localizedSummary != $0.summary },
+                      "trigger and plan summaries resolve in Simplified Chinese")
+                let localizedValidation = AppLocalization.validationMessage(wrappedValidation)
+                check(localizedValidation.contains("Name): with") && !localizedValidation.contains("Enter text"),
+                      "nested validation wrappers localize without rewriting rule names")
+            } else {
+                check(summaryTriggers.allSatisfy { $0.localizedSummary == $0.summary }, "English trigger summaries match Core text")
+                check(summaryActions.allSatisfy { $0.localizedSummary == $0.summary }, "English action summaries match Core text")
+                check(summaryPlan.steps.allSatisfy { $0.localizedSummary == $0.summary }, "English plan summaries match Core text")
+                check(AppLocalization.validationMessage(wrappedValidation) == wrappedValidation, "English validation wrappers are byte-identical")
+            }
             let url = dir.appendingPathComponent("configuration.json")
             let model = AppModel(configurationURL: url)
             defer { model.shutdown() }
@@ -48,7 +68,7 @@ struct AppChecks {
             secondInstance.restorePreviousBackup()
             check(try Data(contentsOf:url) == bytesBeforeSecondInstance, "second instance save and recovery preserve first instance bytes")
             secondInstance.runRule(AutomationRule(name:"no execution",actions:[AutomationAction(kind:.delay,delaySeconds:0)]))
-            check(!secondInstance.isExecuting && secondInstance.activity.first?.message.contains("writer lease") == true, "second instance manual execution is blocked without activation")
+            check(!secondInstance.isExecuting && secondInstance.activity.first?.message == AppLocalization.text("Not run: this instance does not own the configuration writer lease."), "second instance manual execution is blocked without activation")
             secondInstance.shutdown()
             let backupURL = url.appendingPathExtension("backup")
             let backupBeforeNoop = try Data(contentsOf: backupURL)
@@ -56,7 +76,7 @@ struct AppChecks {
             check(try Data(contentsOf: backupURL) == backupBeforeNoop, "no-change save does not rotate recovery backup")
             model.restorePreviousBackup()
             check(!model.configuration.automationEnabled && !model.configuration.allowScripts && model.configuration.rules.allSatisfy { !$0.enabled }, "editor restore pauses automation and disables every rule")
-            check(model.statusMessage?.contains("restored") == true && model.errorMessage == nil, "successful restore reports actual commit")
+            check(model.statusMessage?.hasPrefix(AppLocalization.text("Previous backup restored with every rule disabled.")) == true && model.errorMessage == nil, "successful restore reports actual commit")
             model.refreshSnapshots()
             check(model.snapshots.isEmpty, "snapshot history starts empty without creating rules")
             model.createSnapshot()
@@ -67,7 +87,7 @@ struct AppChecks {
             let beforeSnapshotRestore = try Data(contentsOf:url)
             model.restoreSnapshot(snapshot)
             check(model.configuration.rules[0].name != "Changed after snapshot" && !model.configuration.automationEnabled && !model.configuration.allowScripts && model.configuration.rules.allSatisfy { !$0.enabled }, "editor snapshot restore resets opt-ins and restores selected content")
-            check(model.snapshots.count == 1 && model.errorMessage == nil && model.statusMessage?.contains("Snapshot restored") == true, "snapshot restore preserves history and reports success")
+            check(model.snapshots.count == 1 && model.errorMessage == nil && model.statusMessage?.hasPrefix(AppLocalization.text("Snapshot restored with every rule disabled.")) == true, "snapshot restore preserves history and reports success")
             let preservedArchives = try FileManager.default.contentsOfDirectory(at:dir,includingPropertiesForKeys:nil).filter { $0.lastPathComponent.contains("before-restore") }
             check(try preservedArchives.contains { try Data(contentsOf:$0) == beforeSnapshotRestore }, "snapshot restore preserves exact replaced file")
             model.configuration.automationEnabled = true
@@ -89,7 +109,7 @@ struct AppChecks {
             model.configuration.allowScripts = false
             if !SessionSafety.allowsExecution {
                 model.runRule(AutomationRule(name: "Locked-session check", actions: [AutomationAction(kind: .delay, delaySeconds: 0)]))
-                check(!model.isExecuting && model.activity.first?.message.contains("desktop session") == true, "manual run refuses unavailable desktop without effects")
+                check(!model.isExecuting && model.activity.first?.message == AppLocalization.text("Not run: the desktop session is locked or unavailable."), "manual run refuses unavailable desktop without effects")
             }
             let corrupt = dir.appendingPathComponent("future.json")
             let original = Data("{\"schemaVersion\":999}".utf8)

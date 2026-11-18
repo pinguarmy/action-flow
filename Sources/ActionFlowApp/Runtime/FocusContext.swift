@@ -34,7 +34,9 @@ enum FocusContextError: LocalizedError, Equatable {
     case changed
     case launchNotFrontmost
 
-    var errorDescription: String? {
+    var errorDescription: String? { englishDescription.map { AppLocalization.text($0) } }
+
+    private var englishDescription: String? {
         switch self {
         case .unavailable:
             return "The foreground application could not be identified. Window and keyboard actions were stopped without changing focus."

@@ -42,7 +42,7 @@ final class InputMonitor {
         // Do not call CGRequestListenEventAccess here. Permission requests belong
         // to an explicit user command, not starting or restoring automation.
         guard Self.hasInputMonitoringPermission else {
-            onStatus?("Input Monitoring permission is required. Enable it in System Settings, then restart monitoring.")
+            onStatus?(AppLocalization.text("Input Monitoring permission is required. Enable it in System Settings, then restart monitoring."))
             return
         }
         let types: [CGEventType] = [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel]
@@ -51,12 +51,12 @@ final class InputMonitor {
                                          options: .listenOnly, eventsOfInterest: mask,
                                          callback: actionFlowInputCallback,
                                          userInfo: Unmanaged.passUnretained(self).toOpaque()) else {
-            onStatus?("macOS could not create the passive input monitor. Check Input Monitoring permission. Secure input can hide keyboard events.")
+            onStatus?(AppLocalization.text("macOS could not create the passive input monitor. Check Input Monitoring permission. Secure input can hide keyboard events."))
             return
         }
         guard let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) else {
             CFMachPortInvalidate(tap)
-            onStatus?("Could not attach the input monitor to the main run loop.")
+            onStatus?(AppLocalization.text("Could not attach the input monitor to the main run loop."))
             return
         }
         self.tap = tap
@@ -64,7 +64,7 @@ final class InputMonitor {
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
         running = true
-        onStatus?("Passive input monitoring is active. Secure input and system-reserved shortcuts may not be observable.")
+        onStatus?(AppLocalization.text("Passive input monitoring is active. Secure input and system-reserved shortcuts may not be observable."))
     }
 
     func stop() {
@@ -81,7 +81,7 @@ final class InputMonitor {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             // Stop rather than repeatedly re-enabling a tap disabled by the OS.
             stop()
-            onStatus?("macOS disabled the input monitor. Restart monitoring when ready.")
+            onStatus?(AppLocalization.text("macOS disabled the input monitor. Restart monitoring when ready."))
             return
         }
         let bundleIdentifier = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""

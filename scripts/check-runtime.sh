@@ -14,6 +14,7 @@ swiftc -swift-version 5 -parse-as-library -I "$BIN/Modules" \
  "$ROOT/Sources/ActionFlowApp/Runtime/InputDecoder.swift" \
  "$ROOT/Sources/ActionFlowApp/Runtime/WindowController.swift" \
  "$ROOT/Sources/ActionFlowApp/Runtime/MenuCommandController.swift" \
+ "$ROOT/Sources/ActionFlowApp/AppLocalization.swift" \
  "$BIN/ActionFlowCore.build/Models.swift.o" \
  "$BIN/ActionFlowCore.build/MenuCommandPath.swift.o" \
  "$BIN/ActionFlowCore.build/RuleValidator.swift.o" \
@@ -25,6 +26,7 @@ swiftc -swift-version 5 -parse-as-library -I "$BIN/Modules" \
  "$BIN/ActionFlowCore.build/RuleTemplates.swift.o" \
  "$BIN/ActionFlowCore.build/ExecutionProgress.swift.o" \
  "$BIN/ActionFlowCore.build/SessionTransition.swift.o" \
+ "$BIN/ActionFlowCore.build/ConfigurationLease.swift.o" \
  "$BIN/ActionFlowCore.build/TriggerInterest.swift.o" \
  -o "$TMP/RuntimeChecks"
 ACTIONFLOW_TEST_SECRET=DO_NOT_INHERIT "$TMP/RuntimeChecks"

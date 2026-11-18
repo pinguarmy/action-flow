@@ -30,11 +30,11 @@ final class ActionExecutor {
     func cancel() { cancellationGeneration &+= 1 }
 
     func execute(_ actions: [AutomationAction]) async throws -> String {
-        guard !executing else { throw RuntimeError.message("Another action chain is still running.") }
+        guard !executing else { throw RuntimeError.message(AppLocalization.text("Another action chain is still running.")) }
         let preflightErrors = ActionPreflight.errors(for: actions)
-        guard preflightErrors.isEmpty else { throw RuntimeError.message(preflightErrors.joined(separator: " ")) }
+        guard preflightErrors.isEmpty else { throw RuntimeError.message(preflightErrors.map { AppLocalization.validationMessage($0) }.joined(separator: " ")) }
         guard allowScripts || !actions.contains(where: { $0.kind == .shellScript }) else {
-            throw RuntimeError.message("Shell scripts are disabled. No steps were run. Enable scripts explicitly in Settings before running this chain.")
+            throw RuntimeError.message(AppLocalization.text("Shell scripts are disabled. No steps were run. Enable scripts explicitly in Settings before running this chain."))
         }
         executing = true
         defer { executing = false }
@@ -69,23 +69,23 @@ final class ActionExecutor {
                       let url = URL(string: action.text),
                       let scheme = url.scheme?.lowercased(), ["https", "http", "mailto"].contains(scheme),
                       scheme == "mailto" || !(url.host ?? "").isEmpty else {
-                    throw RuntimeError.message("Only valid http, https, and mailto URLs can be opened. Scripts and file URLs are not accepted.")
+                    throw RuntimeError.message(AppLocalization.text("Only valid http, https, and mailto URLs can be opened. Scripts and file URLs are not accepted."))
                 }
-                guard NSWorkspace.shared.open(url) else { throw RuntimeError.message("macOS could not open the URL.") }
+                guard NSWorkspace.shared.open(url) else { throw RuntimeError.message(AppLocalization.text("macOS could not open the URL.")) }
             case .launchApp:
                 let launchedPID = try await launchApplication(action.text, generation: generation, deadline: deadline)
                 try focus.acceptSuccessfulLaunch(processIdentifier: launchedPID,
                                                  currentProcessIdentifier: foregroundProcessIdentifier())
             case .delay:
                 guard action.delaySeconds.isFinite, (0...60).contains(action.delaySeconds) else {
-                    throw RuntimeError.message("Each delay must be between 0 and 60 seconds.")
+                    throw RuntimeError.message(AppLocalization.text("Each delay must be between 0 and 60 seconds."))
                 }
                 try await pause(action.delaySeconds, generation: generation, deadline: deadline)
             case .menuCommand:
                 // Menu titles are never logged; errors are fixed redacted strings.
                 let path: MenuCommandPath
                 do { path = try MenuCommandPath(parsing: action.text) }
-                catch let error as MenuCommandPathError { throw RuntimeError.message(error.message) }
+                catch let error as MenuCommandPathError { throw RuntimeError.message(AppLocalization.text(error.message)) }
                 let pid = try focus.validate(currentProcessIdentifier: foregroundProcessIdentifier())
                 try requireAccessibility(postingInput: false)
                 try menuCommandController.perform(path: path, expectedProcessIdentifier: pid) {
@@ -95,9 +95,9 @@ final class ActionExecutor {
             case .notification:
                 try await notify(action.text, generation: generation, deadline: deadline)
             case .shellScript:
-                guard allowScripts else { throw RuntimeError.message("Shell scripts are disabled. Enable them explicitly in Settings before running this action.") }
+                guard allowScripts else { throw RuntimeError.message(AppLocalization.text("Shell scripts are disabled. Enable them explicitly in Settings before running this action.")) }
                 guard !action.text.isEmpty, action.text.utf8.count <= 16_384, !action.text.contains("\0") else {
-                    throw RuntimeError.message("A script must contain 1 to 16,384 UTF-8 bytes and no null characters.")
+                    throw RuntimeError.message(AppLocalization.text("A script must contain 1 to 16,384 UTF-8 bytes and no null characters."))
                 }
                 try await runScript(action.text, generation: generation, deadline: deadline)
                 }
@@ -112,15 +112,15 @@ final class ActionExecutor {
             onProgress?(ExecutionProgress(actionIndex: index + 1, actionCount: actions.count,
                                           kind: action.kind, phase: .completed, completedActions: index + 1))
         }
-        return "Completed \(actions.count) action\(actions.count == 1 ? "" : "s")."
+        return actions.count == 1 ? AppLocalization.text("Completed 1 action.") : AppLocalization.format("Completed %lld actions.", Int64(actions.count))
     }
 
     private func checkCancellation(_ generation: UInt64, deadline: TimeInterval) throws {
         try Task.checkCancellation()
-        guard sessionAllowsExecution() else { throw RuntimeError.message("Automation stopped because the desktop session is locked, inactive or unavailable. Nothing will resume automatically from this chain.") }
+        guard sessionAllowsExecution() else { throw RuntimeError.message(AppLocalization.text("Automation stopped because the desktop session is locked, inactive or unavailable. Nothing will resume automatically from this chain.")) }
         guard generation == cancellationGeneration else { throw CancellationError() }
         guard ProcessInfo.processInfo.systemUptime < deadline else {
-            throw RuntimeError.message("The action chain reached its 120-second time limit.")
+            throw RuntimeError.message(AppLocalization.text("The action chain reached its 120-second time limit."))
         }
     }
 
@@ -138,7 +138,7 @@ final class ActionExecutor {
                                    deadline: TimeInterval) async throws -> pid_t {
         guard !bundleIdentifier.isEmpty, bundleIdentifier.utf8.count <= 512,
               let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) else {
-            throw RuntimeError.message("The application bundle identifier is not installed.")
+            throw RuntimeError.message(AppLocalization.text("The application bundle identifier is not installed."))
         }
         try checkCancellation(generation, deadline: deadline)
         let launchDeadline = min(deadline, ProcessInfo.processInfo.systemUptime + 10)
@@ -153,7 +153,7 @@ final class ActionExecutor {
                 } else if let application {
                     completion.value = .success(application)
                 } else {
-                    completion.value = .failure(RuntimeError.message("macOS did not return the launched application."))
+                    completion.value = .failure(RuntimeError.message(AppLocalization.text("macOS did not return the launched application.")))
                 }
             }
         }
@@ -162,12 +162,12 @@ final class ActionExecutor {
         while true {
             try checkCancellation(generation, deadline: deadline)
             guard ProcessInfo.processInfo.systemUptime < launchDeadline else {
-                throw RuntimeError.message("The application did not launch and become frontmost within 10 seconds. Following actions were not run.")
+                throw RuntimeError.message(AppLocalization.text("The application did not launch and become frontmost within 10 seconds. Following actions were not run."))
             }
             if let result = completion.value {
                 let application = try result.get()
                 guard !application.isTerminated, application.bundleIdentifier == bundleIdentifier else {
-                    throw RuntimeError.message("The launched application terminated or did not match the requested bundle identifier.")
+                    throw RuntimeError.message(AppLocalization.text("The launched application terminated or did not match the requested bundle identifier."))
                 }
                 if foregroundProcessIdentifier() == application.processIdentifier {
                     return application.processIdentifier
@@ -179,21 +179,21 @@ final class ActionExecutor {
 
     private func requireAccessibility(postingInput: Bool = true) throws {
         guard AXIsProcessTrusted() else {
-            throw RuntimeError.message("Accessibility permission is required for window and keyboard actions. Grant it in System Settings yourself.")
+            throw RuntimeError.message(AppLocalization.text("Accessibility permission is required for window and keyboard actions. Grant it in System Settings yourself."))
         }
         guard !postingInput || CGPreflightPostEventAccess() else {
-            throw RuntimeError.message("macOS has not authorized this app to post input events.")
+            throw RuntimeError.message(AppLocalization.text("macOS has not authorized this app to post input events."))
         }
     }
 
     private func postShortcut(keyCode: UInt16, modifiers: ModifierKeys, focus: FocusContext,
                               generation: UInt64, deadline: TimeInterval) async throws {
         guard keyCode <= 127, !modifiers.intersection([.command, .option, .control]).isEmpty else {
-            throw RuntimeError.message("Shortcuts require a key code from 0 to 127 and Command, Option, or Control.")
+            throw RuntimeError.message(AppLocalization.text("Shortcuts require a key code from 0 to 127 and Command, Option, or Control."))
         }
         guard let down = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: true),
               let up = CGEvent(keyboardEventSource: nil, virtualKey: keyCode, keyDown: false) else {
-            throw RuntimeError.message("macOS could not create the keyboard event.")
+            throw RuntimeError.message(AppLocalization.text("macOS could not create the keyboard event."))
         }
         var flags: CGEventFlags = []
         if modifiers.contains(.command) { flags.insert(.maskCommand) }
@@ -214,7 +214,7 @@ final class ActionExecutor {
     }
 
     private func insertText(_ text: String, focus: FocusContext, generation: UInt64, deadline: TimeInterval) async throws {
-        guard text.utf16.count <= 16_384 else { throw RuntimeError.message("Inserted text is limited to 16,384 UTF-16 units.") }
+        guard text.utf16.count <= 16_384 else { throw RuntimeError.message(AppLocalization.text("Inserted text is limited to 16,384 UTF-16 units.")) }
         // Capture only for this text action, after the caller checked AX access.
         // A shortcut in an earlier step may intentionally select another field.
         let pid = try focus.validate(currentProcessIdentifier: foregroundProcessIdentifier())
@@ -233,7 +233,7 @@ final class ActionExecutor {
             guard units.count <= 256,
                   let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
                   let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false) else {
-                throw RuntimeError.message("A text character is too large or macOS could not create its input event.")
+                throw RuntimeError.message(AppLocalization.text("A text character is too large or macOS could not create its input event."))
             }
             units.withUnsafeBufferPointer { buffer in
                 down.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: buffer.baseAddress)
@@ -263,7 +263,7 @@ final class ActionExecutor {
 
     private func notify(_ text: String, generation: UInt64, deadline: TimeInterval) async throws {
         guard !text.isEmpty, text.utf8.count <= 4_096 else {
-            throw RuntimeError.message("Notification text must contain 1 to 4,096 UTF-8 bytes.")
+            throw RuntimeError.message(AppLocalization.text("Notification text must contain 1 to 4,096 UTF-8 bytes."))
         }
         // Never request authorization from an action. Delivery is unavailable
         // until the user grants notification permission outside this executor.
@@ -274,7 +274,7 @@ final class ActionExecutor {
         }
         let authorization = try await notificationResult(settingsResult, generation: generation, deadline: deadline)
         guard authorization == .authorized || authorization == .provisional else {
-            throw RuntimeError.message("Notifications are not authorized. This action does not request permission automatically.")
+            throw RuntimeError.message(AppLocalization.text("Notifications are not authorized. This action does not request permission automatically."))
         }
         let content = UNMutableNotificationContent()
         content.title = "ActionFlow"
@@ -301,7 +301,7 @@ final class ActionExecutor {
             try checkCancellation(generation, deadline: deadline)
             if let value = result.value { return try value.get() }
             guard ProcessInfo.processInfo.systemUptime < callbackDeadline else {
-                throw RuntimeError.message("The notification service did not respond within 5 seconds.")
+                throw RuntimeError.message(AppLocalization.text("The notification service did not respond within 5 seconds."))
             }
             try await pause(0.025, generation: generation, deadline: deadline)
         }
@@ -316,10 +316,10 @@ final class ActionExecutor {
         while true {
             try checkCancellation(generation, deadline: deadline)
             guard ProcessInfo.processInfo.systemUptime < scriptDeadline else {
-                throw RuntimeError.message("The shell script reached its 10-second time limit. Its process group was terminated.")
+                throw RuntimeError.message(AppLocalization.text("The shell script reached its 10-second time limit. Its process group was terminated."))
             }
             if let status = try process.poll() {
-                guard status == 0 else { throw RuntimeError.message("The shell script exited unsuccessfully, wait status \(status). Output is discarded.") }
+                guard status == 0 else { throw RuntimeError.message(AppLocalization.format("The shell script exited unsuccessfully, wait status %lld. Output is discarded.", Int64(status))) }
                 return
             }
             try await pause(0.05, generation: generation, deadline: deadline)
@@ -349,17 +349,17 @@ private final class BoundedScript {
     init(script: String) throws {
         var attributes: posix_spawnattr_t?
         var actions: posix_spawn_file_actions_t?
-        guard posix_spawnattr_init(&attributes) == 0 else { throw RuntimeError.message("Could not initialize script process attributes.") }
+        guard posix_spawnattr_init(&attributes) == 0 else { throw RuntimeError.message(AppLocalization.text("Could not initialize script process attributes.")) }
         defer { posix_spawnattr_destroy(&attributes) }
-        guard posix_spawn_file_actions_init(&actions) == 0 else { throw RuntimeError.message("Could not initialize script file actions.") }
+        guard posix_spawn_file_actions_init(&actions) == 0 else { throw RuntimeError.message(AppLocalization.text("Could not initialize script file actions.")) }
         defer { posix_spawn_file_actions_destroy(&actions) }
         guard posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT)) == 0,
               posix_spawnattr_setpgroup(&attributes, 0) == 0 else {
-            throw RuntimeError.message("Could not isolate the script process group.")
+            throw RuntimeError.message(AppLocalization.text("Could not isolate the script process group."))
         }
         for descriptor in [STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO] {
             guard posix_spawn_file_actions_addopen(&actions, descriptor, "/dev/null", descriptor == STDIN_FILENO ? O_RDONLY : O_WRONLY, 0) == 0 else {
-                throw RuntimeError.message("Could not redirect script input and output.")
+                throw RuntimeError.message(AppLocalization.text("Could not redirect script input and output."))
             }
         }
         let argumentStrings: [String] = ["/bin/zsh", "-f", "-c", script]
@@ -375,13 +375,13 @@ private final class BoundedScript {
             environment.forEach { free($0) }
         }
         guard arguments.allSatisfy({ $0 != nil }), environment.allSatisfy({ $0 != nil }) else {
-            throw RuntimeError.message("Could not allocate the script process arguments.")
+            throw RuntimeError.message(AppLocalization.text("Could not allocate the script process arguments."))
         }
         var argv = arguments + [nil]
         var envp = environment + [nil]
         var child: pid_t = 0
         let result = posix_spawn(&child, "/bin/zsh", &actions, &attributes, &argv, &envp)
-        guard result == 0 else { throw RuntimeError.message("Could not start the shell script, POSIX error \(result).") }
+        guard result == 0 else { throw RuntimeError.message(AppLocalization.format("Could not start the shell script, POSIX error %lld.", Int64(result))) }
         pid = child
     }
 
@@ -392,7 +392,7 @@ private final class BoundedScript {
         if result == 0 { return nil }
         if result == pid { reaped = true; return status }
         if errno == EINTR { return nil }
-        throw RuntimeError.message("Could not read the shell script's exit status, POSIX error \(errno).")
+        throw RuntimeError.message(AppLocalization.format("Could not read the shell script's exit status, POSIX error %lld.", Int64(errno)))
     }
 
     func terminateGroup() {

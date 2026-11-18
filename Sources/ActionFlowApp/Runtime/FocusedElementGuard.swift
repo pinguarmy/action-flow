@@ -30,7 +30,9 @@ enum FocusedElementError: LocalizedError, Equatable {
     case changed
     case unavailable
 
-    var errorDescription: String? {
+    var errorDescription: String? { englishDescription.map { AppLocalization.text($0) } }
+
+    private var englishDescription: String? {
         switch self {
         case .changed:
             return "The focused window or input element changed during this action. Remaining changes were stopped without restoring focus. An earlier change may already have occurred."

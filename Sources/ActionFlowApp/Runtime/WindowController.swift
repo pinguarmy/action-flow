@@ -14,9 +14,9 @@ final class WindowController {
     func perform(_ operation: WindowOperation, expectedProcessIdentifier: pid_t?,
                  validateFocus: () throws -> Void) throws {
         try validateFocus()
-        guard AXIsProcessTrusted() else { throw RuntimeError.message("Window actions require Accessibility permission.") }
+        guard AXIsProcessTrusted() else { throw RuntimeError.message(AppLocalization.text("Window actions require Accessibility permission.")) }
         guard let application = NSWorkspace.shared.frontmostApplication else {
-            throw RuntimeError.message("There is no frontmost application.")
+            throw RuntimeError.message(AppLocalization.text("There is no frontmost application."))
         }
         guard application.processIdentifier == expectedProcessIdentifier else { throw FocusContextError.changed }
         let pid = application.processIdentifier
@@ -30,7 +30,7 @@ final class WindowController {
             return try AXFocus.readFocusedWindow(pid: pid)
         }
         let original = try frame(of: window)
-        guard !NSScreen.screens.isEmpty else { throw RuntimeError.message("No display is available.") }
+        guard !NSScreen.screens.isEmpty else { throw RuntimeError.message(AppLocalization.text("No display is available.")) }
         let screenRects = NSScreen.screens.map { accessibilityRect($0.visibleFrame) }
         let savedFrame = savedFrames.first {
             $0.pid == application.processIdentifier && CFEqual($0.window, window)
@@ -67,7 +67,7 @@ final class WindowController {
               AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &size) == .success,
               let position, let size,
               CFGetTypeID(position) == AXValueGetTypeID(), CFGetTypeID(size) == AXValueGetTypeID() else {
-            throw RuntimeError.message("This application does not expose its window position and size.")
+            throw RuntimeError.message(AppLocalization.text("This application does not expose its window position and size."))
         }
         var point = CGPoint.zero
         var dimensions = CGSize.zero
@@ -75,7 +75,7 @@ final class WindowController {
               AXValueGetValue(unsafeBitCast(size, to: AXValue.self), .cgSize, &dimensions),
               point.x.isFinite, point.y.isFinite, dimensions.width.isFinite, dimensions.height.isFinite,
               dimensions.width > 0, dimensions.height > 0 else {
-            throw RuntimeError.message("The application returned invalid window geometry.")
+            throw RuntimeError.message(AppLocalization.text("The application returned invalid window geometry."))
         }
         return CGRect(origin: point, size: dimensions)
     }
@@ -86,12 +86,12 @@ final class WindowController {
         guard AXUIElementIsAttributeSettable(window, kAXPositionAttribute as CFString, &positionSettable) == .success,
               AXUIElementIsAttributeSettable(window, kAXSizeAttribute as CFString, &sizeSettable) == .success,
               positionSettable.boolValue, sizeSettable.boolValue else {
-            throw RuntimeError.message("This window cannot be moved and resized through public Accessibility APIs. Full-screen and protected windows may not support tiling.")
+            throw RuntimeError.message(AppLocalization.text("This window cannot be moved and resized through public Accessibility APIs. Full-screen and protected windows may not support tiling."))
         }
         var point = frame.origin
         var dimensions = frame.size
         guard let positionValue = AXValueCreate(.cgPoint, &point), let sizeValue = AXValueCreate(.cgSize, &dimensions) else {
-            throw RuntimeError.message("Could not create the requested window geometry.")
+            throw RuntimeError.message(AppLocalization.text("Could not create the requested window geometry."))
         }
         // Size first, then position. Applications may enforce minimum sizes.
         try validateFocus()
@@ -101,13 +101,13 @@ final class WindowController {
         try validateFocus()
         let positionResult = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, positionValue)
         guard sizeResult == .success, positionResult == .success else {
-            throw RuntimeError.message("The application rejected part of the window change. Its frame may be partially changed.")
+            throw RuntimeError.message(AppLocalization.text("The application rejected part of the window change. Its frame may be partially changed."))
         }
         try validateFocus()
         let actual = try self.frame(of: window)
         guard abs(actual.minX - frame.minX) <= 4, abs(actual.minY - frame.minY) <= 4,
               abs(actual.width - frame.width) <= 4, abs(actual.height - frame.height) <= 4 else {
-            throw RuntimeError.message("The application constrained the requested window frame, for example because of a minimum size. The window may be partially changed.")
+            throw RuntimeError.message(AppLocalization.text("The application constrained the requested window frame, for example because of a minimum size. The window may be partially changed."))
         }
     }
 }

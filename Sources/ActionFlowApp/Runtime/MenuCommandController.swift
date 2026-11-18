@@ -44,7 +44,9 @@ enum MenuCommandError: LocalizedError, Equatable {
     case pressRejected
     case timedOut
 
-    var errorDescription: String? {
+    var errorDescription: String? { englishDescription.map { AppLocalization.text($0) } }
+
+    private var englishDescription: String? {
         switch self {
         case .unavailable:
             return "The application does not expose this menu level through Accessibility. Nothing was pressed."

@@ -177,7 +177,7 @@ struct KeyCodeEditor: View {
                     Text(AppLocalization.text(key.1)).tag(key.0)
                 }
                 if !Self.keys.contains(where: { $0.0 == keyCode }) {
-                    Text("Key code \(keyCode)").tag(keyCode)
+                    Text(AppLocalization.format("Key code %lld", Int64(keyCode))).tag(keyCode)
                 }
             }
             TextField("Code", value: $keyCode, format: .number)
