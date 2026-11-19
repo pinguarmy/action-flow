@@ -702,3 +702,6 @@
 "Keypad %@" = "小键盘 %@";
 "Enter" = "Enter";
 "Help" = "帮助";
+"Rules save automatically as versioned JSON in Application Support. The backup keeps an earlier version, refreshed at most every 10 minutes and before each import or template." = "规则会以带版本号的 JSON 自动保存在 Application Support 目录。备份保留较早的版本，最多每 10 分钟更新一次，每次导入或添加模板前也会更新。";
+"Enable %@" = "启用“%@”";
+"Both key presses still reach the active app, unless a single-press rule on the same shortcut keeps them. That single-press rule also runs." = "两次按键仍会传给当前应用，除非使用同一快捷键的单按规则保留了按键。该单按规则也会运行。";

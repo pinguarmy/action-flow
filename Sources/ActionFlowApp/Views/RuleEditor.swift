@@ -234,7 +234,7 @@ struct RuleEditor: View {
             case .shortcut, .doubleShortcut:
                 if rule.trigger.kind == .doubleShortcut {
                     ForgeNote(text: "Press the same key and modifiers twice within 350 ms. This is not a sequence of different shortcuts.", symbol: "repeat")
-                    ForgeNote(text: "Both key presses still reach the active app. A single-press rule using the same shortcut may also run.")
+                    ForgeNote(text: "Both key presses still reach the active app, unless a single-press rule on the same shortcut keeps them. That single-press rule also runs.")
                 }
                 HStack(spacing: 12) {
                     Text(model.isRecordingShortcut ? AppLocalization.text("Press a shortcut…") : rule.trigger.localizedSummary)

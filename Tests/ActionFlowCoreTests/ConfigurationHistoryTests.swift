@@ -197,6 +197,65 @@ final class ConfigurationHistoryTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: store.backupURL), backup)
     }
 
+    func testDefaultSaveRotatesBackupOnEverySave() throws {
+        try store.save(Configuration(rules: [AutomationRule(name: "One")]))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.backupURL.path))
+        let firstBytes = try Data(contentsOf: store.url)
+        try store.save(Configuration(rules: [AutomationRule(name: "Two")]))
+        XCTAssertEqual(try Data(contentsOf: store.backupURL), firstBytes)
+        let secondBytes = try Data(contentsOf: store.url)
+        try store.save(Configuration(rules: [AutomationRule(name: "Three")]))
+        XCTAssertEqual(try Data(contentsOf: store.backupURL), secondBytes)
+    }
+
+    func testNonRotatingSaveKeepsExistingBackupAndReplacesLiveFile() throws {
+        try store.save(Configuration(rules: [AutomationRule(name: "One")]))
+        try store.save(Configuration(rules: [AutomationRule(name: "Two")]))
+        let backupBytes = try Data(contentsOf: store.backupURL)
+        let third = Configuration(rules: [AutomationRule(name: "Three")])
+        try store.save(third, rotatingBackup: false)
+        XCTAssertEqual(try store.load(), third)
+        XCTAssertEqual(try Data(contentsOf: store.backupURL), backupBytes)
+        let fourth = Configuration(rules: [AutomationRule(name: "Four")])
+        try store.save(fourth, rotatingBackup: false)
+        XCTAssertEqual(try store.load(), fourth)
+        XCTAssertEqual(try Data(contentsOf: store.backupURL), backupBytes)
+    }
+
+    func testNonRotatingSaveCreatesMissingBackupFromPreviousBytes() throws {
+        try store.save(Configuration(rules: [AutomationRule(name: "One")]))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.backupURL.path))
+        let previousBytes = try Data(contentsOf: store.url)
+        try store.save(Configuration(rules: [AutomationRule(name: "Two")]), rotatingBackup: false)
+        XCTAssertEqual(try Data(contentsOf: store.backupURL), previousBytes)
+    }
+
+    func testNonRotatingSavePreservesCorruptPreviousFileInBackup() throws {
+        try store.save(Configuration(rules: [AutomationRule(name: "One")]))
+        try store.save(Configuration(rules: [AutomationRule(name: "Two")]))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.backupURL.path))
+        let corrupt = Data("damaged live file".utf8)
+        try corrupt.write(to: store.url)
+        let replacement = Configuration(rules: [AutomationRule(name: "Three")])
+        try store.save(replacement, rotatingBackup: false)
+        XCTAssertEqual(try Data(contentsOf: store.backupURL), corrupt)
+        XCTAssertEqual(try store.load(), replacement)
+    }
+
+    func testNewerSchemaIsRefusedInBothSaveModes() throws {
+        let existingBackup = Data("existing backup bytes".utf8)
+        try existingBackup.write(to: store.backupURL)
+        let future = Data("{\"schemaVersion\":999,\"rules\":[]}".utf8)
+        try future.write(to: store.url)
+        for rotating in [true, false] {
+            XCTAssertThrowsError(try store.save(Configuration(), rotatingBackup: rotating)) { error in
+                XCTAssertEqual(error as? ConfigurationStoreError, .unsupportedSchema(999))
+            }
+            XCTAssertEqual(try Data(contentsOf: store.url), future)
+            XCTAssertEqual(try Data(contentsOf: store.backupURL), existingBackup)
+        }
+    }
+
     func testInvalidConfigurationCreatesNoHistoryDirectory() throws {
         XCTAssertThrowsError(try store.createSnapshot(configuration: Configuration(schemaVersion: 999)))
         XCTAssertFalse(FileManager.default.fileExists(atPath: history.path))

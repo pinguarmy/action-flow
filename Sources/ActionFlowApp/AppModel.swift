@@ -85,6 +85,9 @@ final class AppModel: ObservableObject {
     private var terminationObserver: NSObjectProtocol?
     private var triggerInterest: TriggerInterest = []
     private var conflictCache: (rules: [AutomationRule], messages: [String])?
+    /// System uptime of the last write that rotated the recovery backup in this app session.
+    private var lastBackupRotation: TimeInterval?
+    private static let backupRotationInterval: TimeInterval = 10 * 60
 
     init(configurationURL: URL? = nil) {
         let url = configurationURL ?? Self.defaultConfigurationURL
@@ -238,6 +241,13 @@ final class AppModel: ObservableObject {
         selection = copy.id
         save()
     }
+    /// Shared by the rule list switch and its context menu. The caller applies the same gating.
+    func setRule(_ id: UUID, enabled: Bool) {
+        guard let index = configuration.rules.firstIndex(where: { $0.id == id }) else { return }
+        guard configuration.rules[index].enabled != enabled else { return }
+        configuration.rules[index].enabled = enabled
+        save()
+    }
     func deleteRule(_ id: UUID) {
         configuration.rules.removeAll { $0.id == id }
         if selection == id { selection = configuration.rules.first?.id }
@@ -317,7 +327,7 @@ final class AppModel: ObservableObject {
                 errorMessage = AppLocalization.format("Login item could not be changed: %@", AppLocalization.describe(error))
             }
         }
-        do { try store.save(configuration); lastSavedConfiguration = configuration }
+        do { try writeConfiguration(configuration); lastSavedConfiguration = configuration }
         catch {
             var rollbackMessage = ""
             if persistedLaunchAtLogin != previousLoginState {
@@ -337,6 +347,24 @@ final class AppModel: ObservableObject {
         }
         executor.allowScripts = configuration.allowScripts
         configureMonitor()
+    }
+    /// Edits autosave shortly after each pause, so rotating the recovery backup on every write would
+    /// leave it only one typing burst old. Rotate on the first write of this app session, then at most
+    /// every 10 minutes; imports and templates always rotate (`forceBackupRotation`). The backup
+    /// therefore holds the configuration from before the current editing session (or from at most
+    /// ~10 minutes of edits ago), or from just before the last import or template. Restores never
+    /// touch the backup. The store still rotates whenever the previous file is unreadable or no backup
+    /// exists yet, so damaged bytes are always preserved.
+    private func writeConfiguration(_ configuration: Configuration, forceBackupRotation: Bool = false) throws {
+        let now = ProcessInfo.processInfo.systemUptime
+        var rotate = forceBackupRotation
+        if let last = lastBackupRotation {
+            if now - last >= Self.backupRotationInterval { rotate = true }
+        } else {
+            rotate = true
+        }
+        try store.save(configuration, rotatingBackup: rotate)
+        if rotate { lastBackupRotation = now }
     }
     /// Shared by the written and not-written save paths.
     private func synchronizeRuntimeWithConfiguration() {
@@ -440,7 +468,7 @@ final class AppModel: ObservableObject {
         var candidate = configuration
         candidate.rules.append(contentsOf: rules)
         do {
-            try store.save(candidate)
+            try writeConfiguration(candidate, forceBackupRotation: true)
             configuration = candidate
             lastSavedConfiguration = candidate
             clearRuleFilters()
@@ -615,7 +643,7 @@ final class AppModel: ObservableObject {
         scheduler.reset()
         statusMessage = AppLocalization.text("Automation was paused for a sleep or session change. Review your target and resume explicitly when ready.")
         if wasEnabled && !persistenceBlocked {
-            do { try store.save(configuration); lastSavedConfiguration = configuration }
+            do { try writeConfiguration(configuration); lastSavedConfiguration = configuration }
             catch { errorMessage = AppLocalization.format("Automation remains paused in memory, but the paused state could not be saved: %@", AppLocalization.describe(error)) }
         }
     }
@@ -695,7 +723,7 @@ final class AppModel: ObservableObject {
                 existing.insert(rule.id)
                 candidate.rules.append(rule)
             }
-            try store.save(candidate)
+            try writeConfiguration(candidate, forceBackupRotation: true)
             configuration = candidate
             lastSavedConfiguration = candidate
             statusMessage = AppLocalization.format("Imported %lld rules, all disabled. Review before enabling.", Int64(incoming.rules.count))

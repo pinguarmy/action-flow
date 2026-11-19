@@ -235,7 +235,7 @@ struct AppSettingsView: View {
                 }
                 ForgePanel {
                     Label("Configuration", systemImage: "externaldrive").font(.headline)
-                    Text("Rules are saved as versioned JSON in Application Support. A backup is preserved when the configuration is replaced.")
+                    Text("Rules save automatically as versioned JSON in Application Support. The backup keeps an earlier version, refreshed at most every 10 minutes and before each import or template.")
                         .font(.callout).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     HStack {

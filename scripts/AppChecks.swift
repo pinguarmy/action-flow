@@ -306,6 +306,33 @@ struct AppChecks {
             check(Set(idsAfterMove) == Set(idsBeforeMove) && idsAfterMove.count == idsBeforeMove.count, "reordering keeps every rule and identity")
             check(try ConfigurationStore(url: reorderURL).load().rules.map(\.id) == idsAfterMove, "the new rule order is saved and reloaded")
             reorderModel.shutdown()
+            // Recovery backup policy: rotate on the first write of an app session, keep the backup through
+            // later autosaves (within 10 minutes), and always rotate before a template is added.
+            let policyURL = dir.appendingPathComponent("backup-policy.json")
+            let policyBackupURL = policyURL.appendingPathExtension("backup")
+            try ConfigurationStore(url: policyURL).save(Configuration())
+            check(!FileManager.default.fileExists(atPath: policyBackupURL.path), "backup policy fixture starts without a backup")
+            let policyModel = AppModel(configurationURL: policyURL)
+            policyModel.errorMessage = nil
+            let bytesBeforeFirstPolicySave = try Data(contentsOf: policyURL)
+            policyModel.addRule()
+            let bytesAfterFirstPolicySave = try Data(contentsOf: policyURL)
+            check(policyModel.hasConfigurationLease && bytesAfterFirstPolicySave != bytesBeforeFirstPolicySave
+                  && (try? Data(contentsOf: policyBackupURL)) == bytesBeforeFirstPolicySave,
+                  "first save of a session rotates the backup to the bytes before it")
+            if let index = policyModel.configuration.rules.firstIndex(where: { $0.id == policyModel.selection }) {
+                policyModel.configuration.rules[index].name = "Edited moments later"
+            }
+            policyModel.save()
+            let bytesAfterSecondPolicySave = try Data(contentsOf: policyURL)
+            check(bytesAfterSecondPolicySave != bytesAfterFirstPolicySave
+                  && (try? Data(contentsOf: policyBackupURL)) == bytesBeforeFirstPolicySave,
+                  "a save moments later replaces the live file but keeps the earlier backup")
+            policyModel.addTemplate(RuleTemplates.all[0])
+            check(policyModel.errorMessage == nil && (try? Data(contentsOf: policyURL)) != bytesAfterSecondPolicySave
+                  && (try? Data(contentsOf: policyBackupURL)) == bytesAfterSecondPolicySave,
+                  "adding a template rotates the backup to the bytes just before it")
+            policyModel.shutdown()
             model.configuration.rules = AutomationRule.exampleRules
             model.selection = model.configuration.rules.first?.id
             model.statusMessage = nil

@@ -51,7 +51,12 @@ public final class ConfigurationStore {
     }
 
     /// Validate and encode before touching either file. Preserve the exact previous bytes first.
-    public func save(_ configuration: Configuration) throws {
+    ///
+    /// With `rotatingBackup` (the default) the previous live file always replaces the backup.
+    /// With `rotatingBackup: false` an existing backup is kept as is, but only when the previous
+    /// live file is a valid configuration of the current schema. A missing, unreadable or corrupt previous file
+    /// still rotates, so its exact bytes are never lost. A newer schema is refused in both modes.
+    public func save(_ configuration: Configuration, rotatingBackup: Bool = true) throws {
         lock.lock()
         defer { lock.unlock() }
         try checkFileURL(url)
@@ -60,13 +65,18 @@ public final class ConfigurationStore {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         if FileManager.default.fileExists(atPath: url.path) {
             let previous = try readBounded(url)
+            let header = try? JSONDecoder().decode(SchemaHeader.self, from: previous)
             // A newer app may own this file. Even a valid replacement must not downgrade it.
             // A corrupt file can be replaced explicitly, but its exact bytes remain in the backup.
-            if let header = try? JSONDecoder().decode(SchemaHeader.self, from: previous),
-               header.schemaVersion != Configuration.currentSchemaVersion {
+            if let header, header.schemaVersion != Configuration.currentSchemaVersion {
                 throw ConfigurationStoreError.unsupportedSchema(header.schemaVersion)
             }
-            try writePrivate(previous, to: backupURL)
+            // Keep the older backup only when the file being replaced is a fully valid current
+            // configuration. Anything else (including a valid header over a damaged body) rotates.
+            let keepsExistingBackup = !rotatingBackup && header != nil
+                && FileManager.default.fileExists(atPath: backupURL.path)
+                && (try? decode(previous)) != nil
+            if !keepsExistingBackup { try writePrivate(previous, to: backupURL) }
         }
         try writePrivate(data, to: url)
     }

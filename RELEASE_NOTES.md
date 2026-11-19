@@ -24,3 +24,5 @@ This is an ad-hoc-signed Alpha release, without Apple notarization. The in-app g
 - Window layouts no longer report a failure when an app such as Terminal rounds or limits the requested size.
 - Search matches the trigger and action names shown in the interface language. Rules can be reordered by dragging.
 - F13–F20 and keypad keys have readable names.
+- The recovery backup keeps an earlier version instead of the last autosave: it is refreshed at most every 10 minutes and before imports and templates.
+- Rules can be switched on and off from the rule list.

@@ -305,16 +305,13 @@ struct MainView: View {
                 } else {
                     List(selection: $model.selection) {
                         ForEach(model.filteredRules) { rule in
-                            RuleListRow(rule: rule)
+                            ruleRow(rule)
                                 .tag(rule.id)
                                 .contextMenu {
                                     Button("Duplicate") { model.duplicateRule(rule) }
                                         .disabled(!model.hasConfigurationLease)
                                     Button(AppLocalization.text(rule.enabled ? "Disable rule" : "Enable rule")) {
-                                        if let index = model.configuration.rules.firstIndex(where: { $0.id == rule.id }) {
-                                            model.configuration.rules[index].enabled.toggle()
-                                            model.save()
-                                        }
+                                        model.setRule(rule.id, enabled: !rule.enabled)
                                     }
                                     .disabled(!model.hasConfigurationLease || (!rule.enabled && !RuleValidator.validate(rule).isEmpty))
                                     Divider()
@@ -380,6 +377,20 @@ struct MainView: View {
         .overlay(alignment: .top) { Divider() }
     }
 
+    /// Same gating as the context menu: an enabled rule can always be switched off, but a disabled
+    /// rule with validation errors cannot be switched on. Nothing is switched without the lease.
+    private func ruleRow(_ rule: AutomationRule) -> RuleListRow {
+        let blockedByValidation = !rule.enabled && !RuleValidator.validate(rule).isEmpty
+        let isEnabled = Binding<Bool>(
+            get: { model.configuration.rules.first(where: { $0.id == rule.id })?.enabled ?? rule.enabled },
+            set: { value in model.setRule(rule.id, enabled: value) }
+        )
+        return RuleListRow(rule: rule,
+                           isEnabled: isEnabled,
+                           canToggle: model.hasConfigurationLease && !blockedByValidation,
+                           blockedByValidation: blockedByValidation)
+    }
+
     private func ruleBinding(_ fallback: AutomationRule) -> Binding<AutomationRule> {
         Binding(
             get: { model.configuration.rules.first(where: { $0.id == fallback.id }) ?? fallback },
@@ -394,8 +405,29 @@ struct MainView: View {
 
 private struct RuleListRow: View {
     let rule: AutomationRule
+    let isEnabled: Binding<Bool>
+    let canToggle: Bool
+    let blockedByValidation: Bool
+
+    private var displayName: String {
+        rule.name.isEmpty ? AppLocalization.text("Untitled rule") : rule.name
+    }
 
     var body: some View {
+        HStack(alignment: .center, spacing: 8) {
+            details
+            // A separate accessible control: the combined text element above must not swallow it.
+            Toggle(AppLocalization.format("Enable %@", displayName), isOn: isEnabled)
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .labelsHidden()
+                .disabled(!canToggle)
+                .help(blockedByValidation ? AppLocalization.text("Resolve the validation messages before enabling this rule") : "")
+        }
+        .padding(.vertical, 8)
+    }
+
+    private var details: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: rule.trigger.kind.forgeSymbol)
                 .font(.system(size: 14, weight: .medium))
@@ -404,14 +436,10 @@ private struct RuleListRow: View {
                 .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 6))
             VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(rule.name.isEmpty ? AppLocalization.text("Untitled rule") : rule.name)
+                    Text(displayName)
                         .font(.system(size: 13, weight: .semibold))
                         .lineLimit(1)
                     Spacer(minLength: 0)
-                    if !rule.enabled {
-                        Text("OFF").font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                    }
                 }
                 Text(rule.trigger.localizedSummary)
                     .font(.caption)
@@ -426,7 +454,7 @@ private struct RuleListRow: View {
                 .foregroundStyle(.tertiary)
             }
         }
-        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(AppLocalization.format("%@, %@, %@, %lld actions", rule.name, AppLocalization.text(rule.enabled ? "enabled" : "disabled"), rule.trigger.localizedSummary, Int64(rule.actions.count)))
     }
