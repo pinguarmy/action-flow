@@ -12,6 +12,7 @@ swiftc -swift-version 5 -parse-as-library -I "$BIN/Modules" \
  "$ROOT/Sources/ActionFlowApp/Runtime/ActionExecutor.swift" \
  "$ROOT/Sources/ActionFlowApp/Runtime/InputMonitor.swift" \
  "$ROOT/Sources/ActionFlowApp/Runtime/InputDecoder.swift" \
+ "$ROOT/Sources/ActionFlowApp/Runtime/KeyboardInterceptor.swift" \
  "$ROOT/Sources/ActionFlowApp/Runtime/WindowController.swift" \
  "$ROOT/Sources/ActionFlowApp/Runtime/MenuCommandController.swift" \
  "$ROOT/Sources/ActionFlowApp/AppLocalization.swift" \

@@ -15,6 +15,9 @@ struct InputEvent {
     var appBundleIdentifier: String
     /// Key auto-repeat. Never triggers a rule; only decides whether an owned chord keeps the repeat.
     var isRepeat = false
+    /// True for a key press delivered asynchronously by the background `KeyboardInterceptor`: whether it was
+    /// kept from the active app was already decided on that thread, so routing must not decide it again.
+    var decidedByInterceptor = false
 
     init(kind: TriggerKind = .shortcut, keyCode: UInt16 = 0,
          modifiers: ModifierKeys = [], mouseButton: Int = 0,
@@ -28,20 +31,23 @@ struct InputEvent {
     }
 }
 
-/// Up to two session taps on the main run loop. Mouse buttons and scrolling are always observed
-/// listen-only. The keyboard tap is active only while an enabled single-press shortcut rule keeps its
-/// key press and Accessibility is granted; it then drops exactly the key presses `onEvent` claims.
+/// Mouse buttons and scrolling are always observed by a listen-only tap on the main run loop. The keyboard
+/// is observed by a listen-only tap on the main run loop too, except while an enabled single-press shortcut
+/// rule keeps its key press and Accessibility is granted: then a `KeyboardInterceptor` owns an active tap on
+/// its own thread, so a busy main thread can never delay key delivery system-wide. It drops exactly the key
+/// presses its latest `InterceptionSnapshot` claims and hands every key press to `onEvent` asynchronously.
 /// No event contents or key history are retained.
 @MainActor
 final class InputMonitor {
-    /// Returns true to keep the key press from the active app. Honored only for key presses seen by an
-    /// active keyboard tap; mouse, scroll and every other event always pass through.
+    /// Returns true to keep the key press from the active app. Informational only: the taps on the main run
+    /// loop are listen-only and never drop anything, and a key press delivered by the interceptor was
+    /// decided already (`InputEvent.decidedByInterceptor`).
     var onEvent: ((InputEvent) -> Bool)?
     var onStatus: ((String) -> Void)?
     private(set) var running = false
     /// The input kinds the current taps observe. Empty while stopped.
     private(set) var interest: TriggerInterest = []
-    /// True only while an active (event-dropping) keyboard tap exists.
+    /// True only while the background interceptor (the active, event-dropping keyboard tap) runs.
     private(set) var interceptsShortcuts = false
     /// The keyboard mode requested when the taps were created. A failed active tap falls back to
     /// listen-only without being retried until this request changes.
@@ -50,6 +56,9 @@ final class InputMonitor {
     private var keyboardSource: CFRunLoopSource?
     private var pointerTap: CFMachPort?
     private var pointerSource: CFRunLoopSource?
+    private let interceptor = KeyboardInterceptor()
+    /// The newest snapshot from the owner; handed to the interceptor when it starts.
+    private var latestSnapshot = InterceptionSnapshot.blocked
     /// Uptimes of recent in-place re-enables after a timeout. Kept across stop() so the limit is a rolling window.
     private var timeoutReenables: [TimeInterval] = []
 
@@ -85,16 +94,16 @@ final class InputMonitor {
         var keyboardActive = false
         do {
             if wanted.contains(.keyboard) {
-                if wantsActiveKeyboard, let activeTap = try? makeTap(types: [.keyDown], active: true) {
-                    keyboard = activeTap
+                if wantsActiveKeyboard && startInterceptor() {
                     keyboardActive = true
                 } else {
-                    keyboard = try makeTap(types: [.keyDown], active: false)
+                    keyboard = try makeTap(types: [.keyDown])
                 }
             }
-            if !pointerTypes.isEmpty { pointer = try makeTap(types: pointerTypes, active: false) }
+            if !pointerTypes.isEmpty { pointer = try makeTap(types: pointerTypes) }
         } catch {
             // All or nothing: a partial monitor would silently miss triggers. tick() retries.
+            if keyboardActive { interceptor.stop() }
             if let keyboard { CFMachPortInvalidate(keyboard.tap) }
             if let pointer { CFMachPortInvalidate(pointer.tap) }
             if (error as? TapError) == .runLoop {
@@ -125,13 +134,32 @@ final class InputMonitor {
         }
     }
 
-    /// An active tap is inserted at the head so it sees key presses before other apps; a listen-only tap
-    /// is appended at the tail exactly as before.
-    private func makeTap(types: [CGEventType], active: Bool) throws -> (tap: CFMachPort, source: CFRunLoopSource) {
+    /// Starts the background interceptor with the newest snapshot. False when macOS refuses the active tap.
+    private func startInterceptor() -> Bool {
+        interceptor.update(latestSnapshot)
+        // The weak reference is only ever read on the main queue, never on the interceptor thread.
+        let box = WeakInputMonitor(self)
+        return interceptor.start(
+            onKey: { key in
+                DispatchQueue.main.async { MainActor.assumeIsolated { box.monitor?.receiveIntercepted(key) } }
+            },
+            onDisabled: { generation in
+                DispatchQueue.main.async { MainActor.assumeIsolated { box.monitor?.interceptorDisabled(generation: generation) } }
+            })
+    }
+
+    /// Forwarded by the router. Cheap; the owner calls it whenever an input of the decision changes.
+    func updateInterception(_ snapshot: InterceptionSnapshot) {
+        latestSnapshot = snapshot
+        interceptor.update(snapshot)
+    }
+
+    /// A listen-only tap, appended at the tail. Listen-only taps never delay event delivery.
+    private func makeTap(types: [CGEventType]) throws -> (tap: CFMachPort, source: CFRunLoopSource) {
         let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << $1.rawValue) }
         guard let tap = CGEvent.tapCreate(tap: .cgSessionEventTap,
-                                         place: active ? .headInsertEventTap : .tailAppendEventTap,
-                                         options: active ? .defaultTap : .listenOnly, eventsOfInterest: mask,
+                                         place: .tailAppendEventTap,
+                                         options: .listenOnly, eventsOfInterest: mask,
                                          callback: actionFlowInputCallback,
                                          userInfo: Unmanaged.passUnretained(self).toOpaque()) else {
             throw TapError.creation
@@ -144,6 +172,7 @@ final class InputMonitor {
     }
 
     func stop() {
+        interceptor.stop()
         for tap in [keyboardTap, pointerTap].compactMap({ $0 }) { CGEvent.tapEnable(tap: tap, enable: false) }
         for source in [keyboardSource, pointerSource].compactMap({ $0 }) {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
@@ -159,22 +188,36 @@ final class InputMonitor {
         keyboardRequestedActive = false
     }
 
-    /// Returns true only when the event is a key press that an active keyboard tap should drop.
-    fileprivate func receive(_ type: CGEventType, event: CGEvent) -> Bool {
-        guard running else { return false }
+    /// Listen-only taps on the main run loop: forwards the decoded event. Never drops anything.
+    fileprivate func receive(_ type: CGEventType, event: CGEvent) {
+        guard running else { return }
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            // A slow main thread can time out a tap. Re-enable in place a few times so owned
-            // shortcuts do not leak; otherwise stop rather than repeatedly re-enabling it.
-            if type == .tapDisabledByTimeout && reenableAfterTimeout() { return false }
+            // A slow main thread can time out a tap. Re-enable in place a few times so triggers do
+            // not leak; otherwise stop rather than repeatedly re-enabling it.
+            if type == .tapDisabledByTimeout && reenableAfterTimeout() { return }
             stop()
             onStatus?(AppLocalization.text("macOS disabled the input monitor. Restart monitoring when ready."))
-            return false
+            return
         }
         let bundleIdentifier = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
-        guard let input = InputDecoder.decode(type: type, event: event, appBundleIdentifier: bundleIdentifier) else { return false }
-        let claimed = onEvent?(input) ?? false
-        // Read after onEvent: only a key press seen while an active keyboard tap exists may be dropped.
-        return claimed && type == .keyDown && interceptsShortcuts
+        guard let input = InputDecoder.decode(type: type, event: event, appBundleIdentifier: bundleIdentifier) else { return }
+        _ = onEvent?(input)
+    }
+
+    /// A key press the interceptor thread already decided on, delivered through the main queue.
+    private func receiveIntercepted(_ key: InterceptedKey) {
+        guard running, interceptsShortcuts, interceptor.generation == key.generation else { return }
+        var input = InputEvent(kind: .shortcut, keyCode: key.keyCode, modifiers: key.modifiers, appBundleIdentifier: key.bundleIdentifier)
+        input.isRepeat = key.isRepeat
+        input.decidedByInterceptor = true
+        _ = onEvent?(input)
+    }
+
+    /// The interceptor disabled its tap (user input, or too many timeouts). Behaves like a disabled main-loop tap.
+    private func interceptorDisabled(generation: Int) {
+        guard running, interceptsShortcuts, interceptor.generation == generation else { return }
+        stop()
+        onStatus?(AppLocalization.text("macOS disabled the input monitor. Restart monitoring when ready."))
     }
 
     private func reenableAfterTimeout() -> Bool {
@@ -187,6 +230,7 @@ final class InputMonitor {
     }
 
     deinit {
+        interceptor.stop()
         if let keyboardSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), keyboardSource, .commonModes) }
         if let pointerSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), pointerSource, .commonModes) }
         if let keyboardTap { CFMachPortInvalidate(keyboardTap) }
@@ -194,17 +238,20 @@ final class InputMonitor {
     }
 }
 
+/// Callback of the listen-only taps on the main run loop. Always passes the event through.
 private func actionFlowInputCallback(_ proxy: CGEventTapProxy, _ type: CGEventType,
                                        _ event: CGEvent, _ userInfo: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
-    var drop = false
     if let userInfo {
         // Both taps are attached exclusively to the main run loop.
-        drop = MainActor.assumeIsolated {
+        MainActor.assumeIsolated {
             Unmanaged<InputMonitor>.fromOpaque(userInfo).takeUnretainedValue().receive(type, event: event)
         }
     }
-    // The only dropped events: key presses of an owned shortcut, seen by an active keyboard tap.
-    // Listen-only taps, tap-disabled notices, mouse, scroll and self-generated input always pass through.
-    if drop && type == .keyDown { return nil }
     return Unmanaged.passUnretained(event)
+}
+
+/// Lets the interceptor thread's closures reach the monitor without ever loading a weak reference off the main queue.
+private final class WeakInputMonitor: @unchecked Sendable {
+    weak var monitor: InputMonitor?
+    init(_ monitor: InputMonitor) { self.monitor = monitor }
 }

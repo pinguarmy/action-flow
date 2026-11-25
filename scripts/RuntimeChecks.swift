@@ -109,6 +109,41 @@ struct RuntimeChecks {
         check(decode(.keyDown, key) == nil, "decoder drops self-generated key autorepeat")
         key.setIntegerValueField(.keyboardEventAutorepeat, value: 0)
         check(decode(.keyDown, key) == nil, "decoder drops self-generated keys")
+        // The thread-safe key decoder shares the same rules as the main-actor decoder.
+        let plainKey = syntheticEvent()
+        plainKey.type = .keyDown
+        plainKey.setIntegerValueField(.keyboardEventKeycode, value: 7)
+        plainKey.flags = [.maskCommand, .maskShift, .maskAlphaShift]
+        let plainDecoded = InputDecoder.decodeKey(event: plainKey)
+        check(plainDecoded?.keyCode == 7 && plainDecoded?.modifiers == [.command, .shift] && plainDecoded?.isRepeat == false,
+              "decodeKey reads key code, supported modifiers and no repeat")
+        plainKey.setIntegerValueField(.keyboardEventAutorepeat, value: 1)
+        check(InputDecoder.decodeKey(event: plainKey)?.isRepeat == true, "decodeKey marks key autorepeat")
+        plainKey.setIntegerValueField(.eventSourceUserData, value: actionFlowEventMarker)
+        check(InputDecoder.decodeKey(event: plainKey) == nil, "decodeKey drops self-generated keys")
+        plainKey.setIntegerValueField(.eventSourceUserData, value: 0)
+        plainKey.setIntegerValueField(.keyboardEventKeycode, value: Int64(UInt16.max) + 1)
+        check(InputDecoder.decodeKey(event: plainKey) == nil, "decodeKey drops out-of-range key codes")
+        // The consume decision of the background keyboard tap, from a plain snapshot.
+        let chordIndex = ShortcutInterceptionIndex(rules: [AutomationRule(enabled: true, trigger: Trigger(keyCode: 123, modifiers: [.control, .option]),
+                                                                          actions: [AutomationAction(kind: .delay, delaySeconds: 0)])])
+        func snapshot(allowed: Bool = true, editor: String = "Io.ActionFlow.Test", pid: Int32? = 4242, bundle: String = " Com.Example.Target ",
+                      index: ShortcutInterceptionIndex = chordIndex) -> InterceptionSnapshot {
+            InterceptionSnapshot(index: index, automaticExecutionAllowed: allowed, editorBundleIdentifier: editor,
+                                 frontmostProcessIdentifier: pid, frontmostBundleIdentifier: bundle)
+        }
+        check(snapshot().consumes(keyCode: 123, modifiers: [.control, .option]), "snapshot consumes a matching chord when automation is allowed")
+        check(!snapshot().consumes(keyCode: 124, modifiers: [.control, .option]) && !snapshot().consumes(keyCode: 123, modifiers: [.control]),
+              "snapshot passes other chords through")
+        check(!InterceptionSnapshot.blocked.consumes(keyCode: 123, modifiers: [.control, .option]), "blocked snapshot consumes nothing")
+        check(!snapshot(allowed: false).consumes(keyCode: 123, modifiers: [.control, .option]), "snapshot passes keys through when automation is not allowed")
+        check(!snapshot(bundle: "io.actionflow.TEST").consumes(keyCode: 123, modifiers: [.control, .option]), "snapshot never consumes while ActionFlow is frontmost")
+        check(!snapshot(pid: nil).consumes(keyCode: 123, modifiers: [.control, .option]) && !snapshot(pid: 0).consumes(keyCode: 123, modifiers: [.control, .option]),
+              "snapshot passes keys through without a frontmost process")
+        check(!snapshot(bundle: "  ").consumes(keyCode: 123, modifiers: [.control, .option]), "snapshot passes keys through without a bundle identifier")
+        check(!snapshot(index: .empty).consumes(keyCode: 123, modifiers: [.control, .option]), "snapshot with no consuming rule consumes nothing")
+        check(snapshot().frontmostBundleIdentifier == "com.example.target" && snapshot().editorBundleIdentifier == "io.actionflow.test",
+              "snapshot normalizes bundle identifiers")
         for type: CGEventType in [.keyUp, .flagsChanged, .mouseMoved, .leftMouseUp, .tapDisabledByTimeout] {
             check(decode(type, syntheticEvent()) == nil, "decoder ignores irrelevant event \(type.rawValue)")
         }

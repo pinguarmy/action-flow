@@ -185,6 +185,33 @@ struct AppChecks {
             check(try ConfigurationStore(url: schemaURL).load() == schemaModel.configuration,
                   "a schema 1 file loads equal to the in-memory configuration")
             schemaModel.shutdown()
+            // The snapshot the background keyboard tap decides with follows model state. CI has no permission,
+            // so no tap exists; frontmost-app fields and session safety depend on the machine and are not asserted.
+            let interceptionURL = dir.appendingPathComponent("interception-snapshot.json")
+            let interceptionModel = AppModel(configurationURL: interceptionURL)
+            interceptionModel.errorMessage = nil
+            interceptionModel.configuration.rules = [AutomationRule(name: "Interception fixture", enabled: true,
+                                                                    trigger: Trigger(keyCode: 123, modifiers: [.control, .option]),
+                                                                    actions: [AutomationAction(kind: .delay, delaySeconds: 0)])]
+            interceptionModel.selection = interceptionModel.configuration.rules.first?.id
+            check(!interceptionModel.currentInterceptionSnapshot.index.isEmpty, "an enabled consuming shortcut rule enters the interception snapshot")
+            check(!interceptionModel.currentInterceptionSnapshot.automaticExecutionAllowed, "paused automation never allows interception")
+            interceptionModel.configuration.automationEnabled = true
+            if SessionSafety.allowsExecution {
+                check(interceptionModel.currentInterceptionSnapshot.automaticExecutionAllowed, "enabled automation allows interception in a safe session")
+            }
+            interceptionModel.startRecordingShortcut()
+            check(interceptionModel.isRecordingShortcut && !interceptionModel.currentInterceptionSnapshot.automaticExecutionAllowed,
+                  "recording a shortcut stops interception")
+            interceptionModel.stopRecordingShortcut()
+            interceptionModel.configuration.rules[0].trigger.passThrough = true
+            check(interceptionModel.currentInterceptionSnapshot.index.isEmpty, "a pass-through rule leaves the interception snapshot")
+            interceptionModel.configuration.rules[0].trigger.passThrough = false
+            check(!interceptionModel.currentInterceptionSnapshot.index.isEmpty, "a rule that keeps its key press returns to the interception snapshot")
+            interceptionModel.configuration.automationEnabled = false
+            check(!interceptionModel.currentInterceptionSnapshot.automaticExecutionAllowed, "disabling automation stops interception")
+            interceptionModel.shutdown()
+            check(interceptionModel.currentInterceptionSnapshot == .blocked, "shutdown blocks the interception snapshot")
             // Synthetic Gesture Lab adapter checks. Typed samples only; no hardware, no monitors.
             let labModel = GestureLabModel()
             let pad = GesturePadCoordinator(model: labModel)

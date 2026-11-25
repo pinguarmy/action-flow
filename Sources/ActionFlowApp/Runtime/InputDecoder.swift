@@ -5,21 +5,29 @@ import ActionFlowCore
 /// installs an event tap, reads typed text, or posts an event.
 @MainActor
 enum InputDecoder {
+    /// The key-press part of `decode`, usable from any thread (the background keyboard interceptor calls it
+    /// on its own thread). Nil for self-generated events and key codes outside the UInt16 range.
+    /// Auto-repeat is decoded so the model can keep repeats of an owned chord from the active app; it never
+    /// triggers a rule (AppModel.handle checks isRepeat first). Double-press recognition belongs to
+    /// RuleScheduler: physical key presses always enter the scheduler as ordinary shortcut signals.
+    nonisolated static func decodeKey(event: CGEvent) -> (keyCode: UInt16, modifiers: ModifierKeys, isRepeat: Bool)? {
+        guard event.getIntegerValueField(.eventSourceUserData) != actionFlowEventMarker else { return nil }
+        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+        guard (0...Int64(UInt16.max)).contains(keyCode) else { return nil }
+        return (keyCode: UInt16(keyCode), modifiers: modifiers(from: event.flags),
+                isRepeat: event.getIntegerValueField(.keyboardEventAutorepeat) != 0)
+    }
+
     static func decode(type: CGEventType, event: CGEvent, appBundleIdentifier: String) -> InputEvent? {
         guard event.getIntegerValueField(.eventSourceUserData) != actionFlowEventMarker else { return nil }
         var input = InputEvent(appBundleIdentifier: appBundleIdentifier)
         input.modifiers = modifiers(from: event.flags)
         switch type {
         case .keyDown:
-            // Auto-repeat is decoded so the model can keep repeats of an owned chord from the
-            // active app; it never triggers a rule (AppModel.handle checks isRepeat first).
-            input.isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
-            let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-            guard (0...Int64(UInt16.max)).contains(keyCode) else { return nil }
-            // Double-press recognition belongs to RuleScheduler. Physical key
-            // presses always enter the scheduler as ordinary shortcut signals.
+            guard let key = decodeKey(event: event) else { return nil }
+            input.isRepeat = key.isRepeat
             input.kind = .shortcut
-            input.keyCode = UInt16(keyCode)
+            input.keyCode = key.keyCode
         case .leftMouseDown, .rightMouseDown, .otherMouseDown:
             let button = event.getIntegerValueField(.mouseEventButtonNumber)
             guard button >= 0 else { return nil }
@@ -41,7 +49,7 @@ enum InputDecoder {
         return input
     }
 
-    private static func modifiers(from flags: CGEventFlags) -> ModifierKeys {
+    nonisolated private static func modifiers(from flags: CGEventFlags) -> ModifierKeys {
         var result: ModifierKeys = []
         if flags.contains(.maskCommand) { result.insert(.command) }
         if flags.contains(.maskAlternate) { result.insert(.option) }

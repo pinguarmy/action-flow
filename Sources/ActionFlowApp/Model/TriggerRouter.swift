@@ -23,6 +23,9 @@ final class TriggerRouter {
     private var scheduler = RuleScheduler()
     /// The input kinds the enabled rules currently need.
     private(set) var interest: TriggerInterest = []
+    /// The consuming single-press shortcut rules, indexed by chord. Rebuilt only when the rules change.
+    private(set) var interceptionIndex = ShortcutInterceptionIndex.empty
+    private var indexedRules: [AutomationRule] = []
 
     /// Returns true to keep the key press from the active app (answered synchronously).
     var onEvent: ((InputEvent) -> Bool)? {
@@ -36,9 +39,17 @@ final class TriggerRouter {
     var running: Bool { monitor.running }
     var interceptsShortcuts: Bool { monitor.interceptsShortcuts }
 
-    /// Recomputes the interest from `rules`. Returns true when it changed.
+    /// Hands the newest interception snapshot to the monitor (and its background keyboard interceptor).
+    func updateInterception(_ snapshot: InterceptionSnapshot) { monitor.updateInterception(snapshot) }
+
+    /// Recomputes the interest from `rules` (and rebuilds the interception index when `rules` differ from
+    /// the ones it was built from). Returns true when the interest changed.
     @discardableResult
     func refreshInterest(rules: [AutomationRule]) -> Bool {
+        if rules != indexedRules {
+            indexedRules = rules
+            interceptionIndex = ShortcutInterceptionIndex(rules: rules)
+        }
         let updated = TriggerInterest(rules: rules)
         guard updated != interest else { return false }
         interest = updated
@@ -70,7 +81,8 @@ final class TriggerRouter {
         let isLifecycle = event.kind == .appLaunched || event.kind == .appTerminated
         if !isLifecycle && !event.appBundleIdentifier.isEmpty && event.appBundleIdentifier.lowercased() != context.bundleIdentifier { return .ignored }
         // Independent of cooldown and running state, so holding an owned chord never leaks repeats.
-        let consumes = event.kind == .shortcut && ShortcutInterception.consumes(keyCode: event.keyCode, modifiers: event.modifiers,
+        // A key press from the background interceptor was already kept or passed on its own thread.
+        let consumes = !event.decidedByInterceptor && event.kind == .shortcut && ShortcutInterception.consumes(keyCode: event.keyCode, modifiers: event.modifiers,
             rules: rules, bundleIdentifier: context.bundleIdentifier)
         // Auto-repeat never triggers a rule or affects a pending double press.
         if event.isRepeat { return Routed(consumes: consumes, candidates: [], context: context) }

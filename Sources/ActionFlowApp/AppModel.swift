@@ -13,9 +13,11 @@ final class AppModel: ObservableObject {
         didSet {
             // Runs on every in-place edit, so it must stay cheap and must never save.
             // The rules comparison is the only O(n) work; configureMonitor() never mutates configuration.
-            guard oldValue.rules != configuration.rules else { return }
-            guard router.refreshInterest(rules: configuration.rules) else { return }
-            configureMonitor()
+            let rulesChanged = oldValue.rules != configuration.rules
+            guard rulesChanged || oldValue.automationEnabled != configuration.automationEnabled else { return }
+            // Also rebuilds the interception index when the rules changed.
+            let interestChanged = rulesChanged && router.refreshInterest(rules: configuration.rules)
+            if interestChanged { configureMonitor() } else { pushInterceptionSnapshot() }
         }
     }
     @Published var selection: UUID?
@@ -87,6 +89,7 @@ final class AppModel: ObservableObject {
         coordinator.currentProgress = { [weak self] in self?.executionProgress }
         coordinator.publishExecuting = { [weak self] value in self?.isExecuting = value }
         coordinator.publishProgress = { [weak self] value in self?.executionProgress = value }
+        coordinator.onPreparationChanged = { [weak self] in self?.pushInterceptionSnapshot() }
         coordinator.recordActivity = { [weak self] name, message, success, progress in
             self?.appendActivity(name, message, success, progress: progress)
         }
@@ -94,6 +97,8 @@ final class AppModel: ObservableObject {
             guard let self else { return }
             self.router.invalidatePendingShortcuts()
             if Self.isRegularTarget(app) { self.lastExternalApplication = app }
+            // The frontmost app changed: the keyboard interceptor decides against the new one from now on.
+            self.pushInterceptionSnapshot(frontmost: app)
             self.handle(InputEvent(kind: .appActivated, appBundleIdentifier: identifier))
         }
         systemEvents.onApplicationLifecycle = { [weak self] kind, identifier in
@@ -103,6 +108,7 @@ final class AppModel: ObservableObject {
         systemEvents.onTick = { [weak self] in self?.tick() }
         systemEvents.onWillTerminate = { [weak self] in self?.shutdown() }
         systemEvents.start()
+        pushInterceptionSnapshot()
         if configuration.automationEnabled { configureMonitor() }
     }
 
@@ -332,6 +338,8 @@ final class AppModel: ObservableObject {
         previousAutomationEnabled = configuration.automationEnabled
     }
     func configureMonitor() {
+        // The snapshot must be current before an active keyboard tap can start deciding with it.
+        pushInterceptionSnapshot()
         router.reconfigure(canRun: hasConfigurationLease && configuration.automationEnabled && permissions.inputMonitoring && SessionSafety.allowsExecution)
     }
     func refreshPermissions() {
@@ -484,8 +492,28 @@ final class AppModel: ObservableObject {
     func stopExecution() { coordinator.stop() }
     private var currentExecutionContext: ExecutionContext { RuleExecutionCoordinator.currentContext }
     private func eligibleForAutomaticExecution(_ context: ExecutionContext) -> Bool {
-        hasConfigurationLease && SessionSafety.allowsExecution && RuleScheduler.canAutomaticallyRun(context: context, editorBundleIdentifier: Bundle.main.bundleIdentifier ?? "io.github.pinguarmy.actionflow",
-            automationEnabled: configuration.automationEnabled, isRecording: isRecordingShortcut, isPreparingManualRun: coordinator.isPreparingManualRun)
+        // The same function the keyboard interceptor's snapshot uses, so both can never disagree.
+        InterceptionSnapshot.isEligible(context: context, editorBundleIdentifier: Self.editorBundleIdentifier,
+                                        automaticExecutionAllowed: automaticExecutionAllowed)
+    }
+    private static var editorBundleIdentifier: String { Bundle.main.bundleIdentifier ?? "io.github.pinguarmy.actionflow" }
+    /// Lease, session safety, automation switch, no recording and no manual-run preparation.
+    private var automaticExecutionAllowed: Bool {
+        hasConfigurationLease && SessionSafety.allowsExecution && configuration.automationEnabled
+            && !isRecordingShortcut && !coordinator.isPreparingManualRun
+    }
+    /// Diagnostics/tests: the snapshot most recently handed to the keyboard interceptor.
+    private(set) var currentInterceptionSnapshot = InterceptionSnapshot.blocked
+    /// Builds and pushes everything the background keyboard interceptor needs to decide whether a key press
+    /// is kept. Cheap and never saves; called whenever an input changes and once per tick. A snapshot
+    /// that lags a state change by one main-thread turn can only delay a consume decision, never invent one.
+    private func pushInterceptionSnapshot(frontmost: NSRunningApplication? = nil) {
+        let app = frontmost ?? NSWorkspace.shared.frontmostApplication
+        let snapshot = InterceptionSnapshot(index: router.interceptionIndex, automaticExecutionAllowed: automaticExecutionAllowed,
+                                            editorBundleIdentifier: Self.editorBundleIdentifier,
+                                            frontmostProcessIdentifier: app?.processIdentifier, frontmostBundleIdentifier: app?.bundleIdentifier ?? "")
+        currentInterceptionSnapshot = snapshot
+        router.updateInterception(snapshot)
     }
     func toggleAutomation() { configuration.automationEnabled.toggle(); save() }
     func clearActivity() { activity.removeAll() }
@@ -515,6 +543,7 @@ final class AppModel: ObservableObject {
         stopExecution()
         router.stopMonitor()
         router.reset()
+        pushInterceptionSnapshot()
         statusMessage = AppLocalization.text("Automation was paused for a sleep or session change. Review your target and resume explicitly when ready.")
         if wasEnabled && !persistenceBlocked {
             do { try writeConfiguration(configuration); lastSavedConfiguration = configuration }
@@ -522,6 +551,8 @@ final class AppModel: ObservableObject {
         }
     }
     private func tick() {
+        // Safety net: repairs any input change that did not push a snapshot itself (for example a screen lock).
+        pushInterceptionSnapshot()
         guard SessionSafety.allowsExecution else {
             router.stopMonitor()
             router.reset()
@@ -543,6 +574,7 @@ final class AppModel: ObservableObject {
         guard !isRecordingShortcut, selection != nil else { return }
         stopExecution()
         isRecordingShortcut = true
+        pushInterceptionSnapshot()
         recorder.start(onRecorded: { [weak self] keyCode, modifiers in
             guard let self else { return }
             if let index = self.configuration.rules.firstIndex(where: { $0.id == self.selection }) {
@@ -559,6 +591,7 @@ final class AppModel: ObservableObject {
     func stopRecordingShortcut() {
         recorder.stop()
         isRecordingShortcut = false
+        pushInterceptionSnapshot()
     }
     func importRules() {
         let panel = NSOpenPanel()
@@ -602,6 +635,9 @@ final class AppModel: ObservableObject {
         systemEvents.stopObservingTermination()
         stopRecordingShortcut()
         stopExecution()
+        // Nothing may be kept from any app once the lease is gone, even before the monitor has stopped.
+        currentInterceptionSnapshot = .blocked
+        router.updateInterception(.blocked)
         router.stopMonitor()
         systemEvents.invalidate()
         configurationLease?.release()

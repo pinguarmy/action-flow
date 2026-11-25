@@ -23,12 +23,16 @@ final class RuleExecutionCoordinator {
     var publishProgress: (ExecutionProgress?) -> Void = { _ in }
     /// Rule name, message, success, progress.
     var recordActivity: (String, String, Bool, ExecutionProgress?) -> Void = { _, _, _, _ in }
+    /// `isPreparingManualRun` just changed (the keyboard interceptor's snapshot depends on it).
+    var onPreparationChanged: () -> Void = {}
 
     private let executor = ActionExecutor()
     private var runningTask: Task<Void, Never>?
     private var busyRuleID: UUID?
     private var pendingRules = RuleExecutionQueue()
-    private var manualActivationTask: Task<Void, Never>?
+    private var manualActivationTask: Task<Void, Never>? {
+        didSet { onPreparationChanged() }
+    }
     private var manualActivationID: UUID?
 
     var allowScripts: Bool {

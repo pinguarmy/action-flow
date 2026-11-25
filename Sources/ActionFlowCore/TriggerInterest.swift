@@ -83,3 +83,35 @@ public enum ShortcutInterception {
             ActionPreflight.shortcutErrors(keyCode: trigger.keyCode, modifiers: trigger.modifiers).isEmpty
     }
 }
+
+/// Enabled single-press shortcut rules that keep their key press, indexed by chord. Pure data: built once
+/// when the rules change, then queried per key press (possibly from a thread other than the one that built
+/// it). Never observes input.
+public struct ShortcutInterceptionIndex: Sendable, Equatable {
+    private struct Chord: Hashable, Sendable {
+        var keyCode: UInt16
+        var modifiers: UInt64
+    }
+
+    /// App conditions of every consuming rule, per exact chord.
+    private var conditionsByChord: [Chord: [RuleConditions]]
+
+    /// Keeps only enabled rules that pass `ShortcutInterception.canConsume`.
+    public init(rules: [AutomationRule]) {
+        var index: [Chord: [RuleConditions]] = [:]
+        for rule in rules where rule.enabled && ShortcutInterception.canConsume(rule.trigger) {
+            index[Chord(keyCode: rule.trigger.keyCode, modifiers: rule.trigger.modifiers.rawValue), default: []].append(rule.conditions)
+        }
+        conditionsByChord = index
+    }
+
+    public static let empty = ShortcutInterceptionIndex(rules: [])
+
+    public var isEmpty: Bool { conditionsByChord.isEmpty }
+
+    /// Same answer as `ShortcutInterception.consumes(keyCode:modifiers:rules:bundleIdentifier:)` for the rules it was built from.
+    public func consumes(keyCode: UInt16, modifiers: ModifierKeys, bundleIdentifier: String) -> Bool {
+        guard let candidates = conditionsByChord[Chord(keyCode: keyCode, modifiers: modifiers.rawValue)] else { return false }
+        return candidates.contains { $0.matches(bundleIdentifier: bundleIdentifier) }
+    }
+}
