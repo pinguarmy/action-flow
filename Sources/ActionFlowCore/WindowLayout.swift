@@ -47,22 +47,57 @@ public enum WindowLayout {
             let height = min(screen.height, max(min(1, screen.height), min(original.height, screen.height / scale) * scale))
             proposed = centered(size: CGSize(width: width, height: height),
                                  at: CGPoint(x: original.midX, y: original.midY), in: screen)
+        case .leftThird, .centerThird, .rightThird, .leftTwoThirds, .rightTwoThirds:
+            proposed = thirdsFrame(operation, in: screen)
         case .nextDisplay:
-            guard screens.count > 1 else { throw WindowLayoutError.requiresAnotherScreen }
-            let next = screens[(index + 1) % screens.count]
-            let width = min(original.width, next.width)
-            let height = min(original.height, next.height)
-            let fractionX = relativePosition(original.minX, in: screen.minX, span: screen.width - original.width)
-            let fractionY = relativePosition(original.minY, in: screen.minY, span: screen.height - original.height)
-            return try validated(fit(CGRect(x: next.minX + fractionX * (next.width - width),
-                                           y: next.minY + fractionY * (next.height - height),
-                                           width: width, height: height), in: next))
+            return try movedToDisplay(original: original, from: index, step: 1, screens: screens)
+        case .previousDisplay:
+            return try movedToDisplay(original: original, from: index, step: -1, screens: screens)
         case .restore:
             guard let restoreFrame else { throw WindowLayoutError.missingRestoreFrame }
             let restoreScreen = screens[screenIndex(for: restoreFrame, screens: screens)]
             return try validated(fit(restoreFrame, in: restoreScreen))
         }
         return try validated(fit(proposed, in: screen))
+    }
+
+    /// Thirds run left to right on landscape or square screens and top to bottom on portrait screens.
+    /// Shared edges are computed once, so adjacent thirds tile exactly with no gap or overlap.
+    private static func thirdsFrame(_ operation: WindowOperation, in screen: CGRect) -> CGRect {
+        let landscape = screen.width >= screen.height
+        let start = landscape ? screen.minX : screen.minY
+        let end = landscape ? screen.maxX : screen.maxY
+        let span = landscape ? screen.width : screen.height
+        let edges: [CGFloat] = [start, start + span / 3, start + span / 3 * 2, end]
+        // Indices into `edges`: the frame spans edges[bounds.0] ..< edges[bounds.1].
+        let bounds: (Int, Int)
+        switch operation {
+        case .leftThird: bounds = (0, 1)
+        case .centerThird: bounds = (1, 2)
+        case .rightThird: bounds = (2, 3)
+        case .leftTwoThirds: bounds = (0, 2)
+        default: bounds = (1, 3) // rightTwoThirds
+        }
+        let lower = edges[bounds.0]
+        let upper = edges[bounds.1]
+        if landscape {
+            return CGRect(x: lower, y: screen.minY, width: upper - lower, height: screen.height)
+        }
+        return CGRect(x: screen.minX, y: lower, width: screen.width, height: upper - lower)
+    }
+
+    /// Keeps the window's relative position, shrinking it when the destination display is smaller.
+    private static func movedToDisplay(original: CGRect, from index: Int, step: Int, screens: [CGRect]) throws -> CGRect {
+        guard screens.count > 1 else { throw WindowLayoutError.requiresAnotherScreen }
+        let screen = screens[index]
+        let destination = screens[(index + step + screens.count) % screens.count]
+        let width = min(original.width, destination.width)
+        let height = min(original.height, destination.height)
+        let fractionX = relativePosition(original.minX, in: screen.minX, span: screen.width - original.width)
+        let fractionY = relativePosition(original.minY, in: screen.minY, span: screen.height - original.height)
+        return try validated(fit(CGRect(x: destination.minX + fractionX * (destination.width - width),
+                                       y: destination.minY + fractionY * (destination.height - height),
+                                       width: width, height: height), in: destination))
     }
 
     private static func valid(_ rect: CGRect) -> Bool {
@@ -133,7 +168,7 @@ public enum WindowLayoutError: LocalizedError, Equatable, Sendable {
         case .noScreens: return "No visible display frame is available."
         case .invalidScreen: return "Every display frame must have finite coordinates and positive dimensions."
         case .invalidRestoreFrame: return "The saved window frame is invalid."
-        case .requiresAnotherScreen: return "Moving to the next display requires at least two displays."
+        case .requiresAnotherScreen: return "Moving to another display requires at least two displays."
         case .missingRestoreFrame: return "This window has no saved frame from this session."
         case .invalidResult: return "The requested layout could not produce valid window geometry."
         }

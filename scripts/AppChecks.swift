@@ -161,6 +161,30 @@ struct AppChecks {
             model.handleSessionTransition(.sessionBecameActive)
             check(!model.configuration.automationEnabled && !model.isExecuting, "session activation never resumes suspended work")
             check(try !ConfigurationStore(url:url).load().automationEnabled, "session pause is persisted when automation was enabled")
+            // Schema 2 is written only when a configuration uses a window layout introduced in schema 2.
+            // Dedicated model and file so the main sequence is undisturbed. Assertions avoid display text.
+            let schemaURL = dir.appendingPathComponent("schema-version.json")
+            let schemaModel = AppModel(configurationURL: schemaURL)
+            schemaModel.errorMessage = nil
+            func declaredSchemaVersion() -> Int? {
+                guard let data = try? Data(contentsOf: schemaURL),
+                      let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+                return object["schemaVersion"] as? Int
+            }
+            schemaModel.configuration.rules = [AutomationRule(name: "Layout fixture", enabled: false,
+                                                              trigger: Trigger(keyCode: 2, modifiers: [.control, .option]),
+                                                              actions: [AutomationAction(windowOperation: .leftThird)])]
+            schemaModel.save()
+            check(schemaModel.hasConfigurationLease && declaredSchemaVersion() == 2,
+                  "a configuration using a schema 2 window layout is written as schema 2")
+            check(try ConfigurationStore(url: schemaURL).load() == schemaModel.configuration,
+                  "a schema 2 file loads equal to the in-memory configuration")
+            schemaModel.configuration.rules[0].actions[0].windowOperation = .leftHalf
+            schemaModel.save()
+            check(declaredSchemaVersion() == 1, "a configuration without schema 2 layouts is written as schema 1 again")
+            check(try ConfigurationStore(url: schemaURL).load() == schemaModel.configuration,
+                  "a schema 1 file loads equal to the in-memory configuration")
+            schemaModel.shutdown()
             // Synthetic Gesture Lab adapter checks. Typed samples only; no hardware, no monitors.
             let labModel = GestureLabModel()
             let pad = GesturePadCoordinator(model: labModel)

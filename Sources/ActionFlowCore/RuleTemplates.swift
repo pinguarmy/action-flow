@@ -84,6 +84,18 @@ public enum RuleTemplates {
                                actions: [AutomationAction(id: identifier(pack: 6, rule: 1, action: 1), kind: .notification,
                                                           text: "A gentle reminder to take a short break.")], cooldown: 1_800)
             ]
+        ),
+        // Uses window layouts introduced in schema 2, so exports of this pack declare schema 2.
+        RuleTemplate(
+            id: "window-thirds", name: "Window thirds",
+            detail: "Place the focused window in a third or two thirds of its display. Works best on wide displays.",
+            rules: [
+                windowRule(pack: 7, number: 1, name: "Window to left third", keyCode: 2, operation: .leftThird),
+                windowRule(pack: 7, number: 2, name: "Window to center third", keyCode: 15, operation: .centerThird),
+                windowRule(pack: 7, number: 3, name: "Window to right third", keyCode: 5, operation: .rightThird),
+                windowRule(pack: 7, number: 4, name: "Window to left two thirds", keyCode: 14, operation: .leftTwoThirds),
+                windowRule(pack: 7, number: 5, name: "Window to right two thirds", keyCode: 17, operation: .rightTwoThirds)
+            ]
         )
     ]
 

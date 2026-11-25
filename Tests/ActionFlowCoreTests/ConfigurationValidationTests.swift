@@ -53,10 +53,15 @@ final class ConfigurationValidationTests: XCTestCase {
     }
 
     func testUnsupportedSchemaAndRuleLimitMessages() {
-        let future = Configuration(schemaVersion: 2, rules: [])
+        let future = Configuration(schemaVersion: 3, rules: [])
         XCTAssertEqual(ConfigurationStore.validationErrors(for: future),
-                       [ConfigurationStoreError.unsupportedSchema(2).errorDescription ?? ""])
-        assertSaveRejects(future, with: .unsupportedSchema(2))
+                       [ConfigurationStoreError.unsupportedSchema(3).errorDescription ?? ""])
+        assertSaveRejects(future, with: .unsupportedSchema(3))
+        // Every supported version validates; schema 0 is not a version.
+        for version in Configuration.supportedSchemaVersions {
+            XCTAssertEqual(ConfigurationStore.validationErrors(for: Configuration(schemaVersion: version, rules: [])), [])
+        }
+        assertSaveRejects(Configuration(schemaVersion: 0, rules: []), with: .unsupportedSchema(0))
 
         let tooMany = Configuration(rules: (0...RuleValidator.maximumRules).map { AutomationRule(name: "Rule \($0)") })
         XCTAssertEqual(ConfigurationStore.validationErrors(for: tooMany),

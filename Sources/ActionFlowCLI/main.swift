@@ -59,8 +59,9 @@ private struct PlanOutput: Encodable {
     let schemaVersion: Int
     let rules: [Rule]
 
-    init(_ configuration: Configuration) {
-        schemaVersion = configuration.schemaVersion
+    init(_ configuration: Configuration, declaredSchemaVersion: Int) {
+        // The version the file declares, not the in-memory normalized one.
+        schemaVersion = declaredSchemaVersion
         // Unlike summarize, plans intentionally omit names and trigger summaries.
         // ExecutionPlan contains descriptive counts, never action payloads.
         rules = configuration.rules.map { Rule(id: $0.id, plan: ExecutionPlan(rule: $0)) }
@@ -88,8 +89,8 @@ private struct SummaryOutput: Encodable {
     let counts: Counts
     let rules: [Rule]
 
-    init(_ configuration: Configuration) {
-        schemaVersion = configuration.schemaVersion
+    init(_ configuration: Configuration, declaredSchemaVersion: Int) {
+        schemaVersion = declaredSchemaVersion
         automationEnabled = configuration.automationEnabled
         allowScripts = configuration.allowScripts
         launchAtLogin = configuration.launchAtLogin
@@ -118,7 +119,7 @@ private func output<Value: Encodable>(_ value: Value) throws {
     try FileHandle.standardOutput.write(contentsOf: encoded(value))
 }
 
-private func loadExisting(_ path: String) throws -> Configuration {
+private func loadExisting(_ path: String) throws -> (configuration: Configuration, declaredSchemaVersion: Int) {
     let url = URL(fileURLWithPath: path).standardizedFileURL
     // ConfigurationStore.load intentionally returns defaults for missing files;
     // an inspection command must instead fail, including removal during a read.
@@ -130,7 +131,7 @@ private func loadExisting(_ path: String) throws -> Configuration {
     guard before.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG) else {
         throw CLIError(message: "The configuration must be an existing regular file.")
     }
-    let configuration = try ConfigurationStore(url: url).load()
+    let loaded = try ConfigurationStore(url: url).loadWithDeclaredSchemaVersion()
     var after = stat()
     let stillPresent = url.withUnsafeFileSystemRepresentation { pointer in
         pointer.map { Darwin.fstatat(AT_FDCWD, $0, &after, 0) } ?? -1
@@ -141,7 +142,7 @@ private func loadExisting(_ path: String) throws -> Configuration {
           before.st_mtimespec.tv_nsec == after.st_mtimespec.tv_nsec else {
         throw CLIError(message: "The configuration changed while being inspected. Retry with a stable file.")
     }
-    return configuration
+    return loaded
 }
 
 private func exampleConfiguration() -> Configuration {
@@ -168,7 +169,8 @@ private func posixError(_ operation: String, code: Int32) -> CLIError {
 /// a racing writer, existing symlink, directory, or existing destination file.
 private func createConfiguration(_ configuration: Configuration, at path: String) throws {
     let destination = URL(fileURLWithPath: path).standardizedFileURL
-    let data = try encoded(configuration)
+    // Like ConfigurationStore, write the oldest schema that can represent the content.
+    let data = try encoded(configuration.withMinimumSchemaVersion())
     guard data.count <= ConfigurationStore.maximumFileBytes else {
         throw CLIError(message: "The exported configuration exceeds the configuration file limit.")
     }
@@ -250,12 +252,15 @@ private func run(_ arguments: [String]) throws -> Int32 {
           !arguments[1].isEmpty, !arguments[1].contains("\0") else { throw UsageError() }
     switch command {
     case "validate":
-        let configuration = try loadExisting(arguments[1])
-        try output(ValidationOutput(valid: true, ruleCount: configuration.rules.count, schemaVersion: configuration.schemaVersion))
+        let loaded = try loadExisting(arguments[1])
+        try output(ValidationOutput(valid: true, ruleCount: loaded.configuration.rules.count,
+                                    schemaVersion: loaded.declaredSchemaVersion))
     case "summarize":
-        try output(SummaryOutput(loadExisting(arguments[1])))
+        let loaded = try loadExisting(arguments[1])
+        try output(SummaryOutput(loaded.configuration, declaredSchemaVersion: loaded.declaredSchemaVersion))
     case "plan":
-        try output(PlanOutput(loadExisting(arguments[1])))
+        let loaded = try loadExisting(arguments[1])
+        try output(PlanOutput(loaded.configuration, declaredSchemaVersion: loaded.declaredSchemaVersion))
     case "example":
         try createConfiguration(exampleConfiguration(), at: arguments[1])
     default:

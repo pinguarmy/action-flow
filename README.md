@@ -7,7 +7,7 @@ A native macOS automation app. Connect shortcuts, mouse input, scrolling, applic
 ## Features
 
 - Trigger rules with shortcuts, double-press shortcuts, mouse buttons, scrolling, app activation, launch or exit, and timers.
-- Combine window layouts, keyboard shortcuts, text insertion, application menu commands, app and URL opening, delays, notifications and optional shell scripts.
+- Combine window layouts (halves, quarters, thirds and two thirds, centering, moving between displays), keyboard shortcuts, text insertion, application menu commands, app and URL opening, delays, notifications and optional shell scripts.
 - Organize rules with search, groups, templates, conflict warnings, action previews, execution progress, pause and cancellation.
 - Edits save automatically; a draft that is not valid yet stays in the editor without pausing automation.
 - Store rules as local JSON, with import, export, backups and snapshot recovery. Imported rules start disabled.
@@ -50,6 +50,14 @@ open dist/ActionFlow.app
 ```
 
 Run `swift test` with a full Xcode environment. To build for Intel, use `ARCH=x86_64 bash scripts/build-app.sh release`.
+
+## Release
+
+Push a tag such as `v0.1.0-alpha.8` (or `v0.1.0` for a final release). The Release workflow runs the tests, packages both architectures with `scripts/package-release.sh`, checks the archives, disk images and CLI on Apple Silicon and Intel, and creates a draft release with the files attached. Review the notes and publish the draft yourself. Pushes that change the packaging scripts run the same steps as a dry run without creating a release.
+
+## Configuration compatibility
+
+Configurations are written with the oldest schema that can describe them. Only rules that use the thirds layouts or Move to previous display need schema 2; 0.1.0 Alpha 7 and earlier refuse such files without changing them, and still open all others.
 
 ## Offline CLI
 

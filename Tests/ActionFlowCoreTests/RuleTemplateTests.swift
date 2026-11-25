@@ -9,9 +9,10 @@ final class RuleTemplateTests: XCTestCase {
         return try encoder.encode(template.configuration)
     }
 
-    func testCatalogContainsSixStableUniqueEntries() {
+    func testCatalogContainsStableUniqueEntries() {
         XCTAssertEqual(RuleTemplates.all.map(\.id), ["window-halves", "window-quarters", "focus-workspace",
-                                                    "launch-browser", "meeting-notes", "gentle-reminder"])
+                                                    "launch-browser", "meeting-notes", "gentle-reminder",
+                                                    "window-thirds"])
         XCTAssertEqual(Set(RuleTemplates.all.map(\.id)).count, RuleTemplates.all.count)
         for template in RuleTemplates.all {
             XCTAssertFalse(template.name.isEmpty)
@@ -61,6 +62,18 @@ final class RuleTemplateTests: XCTestCase {
         XCTAssertEqual(RuleTemplates.all.first?.rules.first?.actions.first?.id.uuidString, "47465450-0001-0001-8000-000000000001")
     }
 
+    func testThirdsShortcutsCollideWithNoOtherTemplateOrExampleRule() {
+        func shortcuts(_ rules: [AutomationRule]) -> [String] {
+            rules.filter { [.shortcut, .doubleShortcut].contains($0.trigger.kind) }
+                .map { "\($0.trigger.modifiers.rawValue)-\($0.trigger.keyCode)" }
+        }
+        let thirds = shortcuts(RuleTemplates.find(id: "window-thirds")?.rules ?? [])
+        XCTAssertEqual(thirds.count, 5)
+        XCTAssertEqual(Set(thirds).count, thirds.count)
+        let others = RuleTemplates.all.filter { $0.id != "window-thirds" }.flatMap(\.rules) + AutomationRule.exampleRules
+        XCTAssertTrue(Set(thirds).isDisjoint(with: Set(shortcuts(others))))
+    }
+
     func testMakeRulesUsesFreshIdentitiesAndPreservesPayloads() {
         for template in RuleTemplates.all {
             let first = template.makeRules()
@@ -86,6 +99,14 @@ final class RuleTemplateTests: XCTestCase {
         XCTAssertEqual(halves.rules.flatMap(\.actions).map(\.windowOperation), [.leftHalf, .rightHalf])
         let quarters = try XCTUnwrap(RuleTemplates.find(id: "window-quarters"))
         XCTAssertEqual(quarters.rules.flatMap(\.actions).map(\.windowOperation), [.topLeft, .topRight, .bottomLeft, .bottomRight])
+        let thirds = try XCTUnwrap(RuleTemplates.find(id: "window-thirds"))
+        XCTAssertEqual(thirds.rules.flatMap(\.actions).map(\.windowOperation),
+                       [.leftThird, .centerThird, .rightThird, .leftTwoThirds, .rightTwoThirds])
+        XCTAssertEqual(thirds.rules.map(\.trigger.keyCode), [2, 15, 5, 14, 17])
+        XCTAssertEqual(thirds.configuration.minimumSchemaVersion, 2)
+        for template in RuleTemplates.all where template.id != "window-thirds" {
+            XCTAssertEqual(template.configuration.minimumSchemaVersion, 1, template.id)
+        }
         let launch = try XCTUnwrap(RuleTemplates.find(id: "launch-browser"))
         XCTAssertEqual(launch.rules.first?.actions.first?.kind, .launchApp)
         XCTAssertEqual(launch.rules.first?.actions.first?.text, "com.apple.Safari")

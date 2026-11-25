@@ -125,12 +125,118 @@ final class WindowLayoutTests: XCTestCase {
     }
 
     func testWindowOperationSerializationRemainsStableAndIncludesNewLayouts() throws {
-        XCTAssertEqual(WindowOperation.allCases.count, 15)
+        XCTAssertEqual(WindowOperation.allCases.count, 21)
         for operation in WindowOperation.allCases {
             XCTAssertEqual(try JSONDecoder().decode(WindowOperation.self, from: JSONEncoder().encode(operation)), operation)
             XCTAssertFalse(operation.title.isEmpty)
         }
         XCTAssertEqual(try JSONDecoder().decode(WindowOperation.self, from: Data("\"leftHalf\"".utf8)), .leftHalf)
+        // Raw values are the JSON strings. Schema 1 operations keep theirs, schema 2 operations append.
+        let schemaOne = ["leftHalf", "rightHalf", "topHalf", "bottomHalf", "topLeft", "topRight", "bottomLeft",
+                         "bottomRight", "maximize", "center", "centerTwoThirds", "larger", "smaller", "nextDisplay", "restore"]
+        let schemaTwo = ["leftThird", "centerThird", "rightThird", "leftTwoThirds", "rightTwoThirds", "previousDisplay"]
+        XCTAssertEqual(WindowOperation.allCases.map(\.rawValue), schemaOne + schemaTwo)
+        for operation in WindowOperation.allCases {
+            XCTAssertEqual(operation.introducedInSchema, schemaTwo.contains(operation.rawValue) ? 2 : 1, operation.rawValue)
+        }
+        XCTAssertEqual(WindowOperation.leftThird.title, "Left third")
+        XCTAssertEqual(WindowOperation.centerThird.title, "Center third")
+        XCTAssertEqual(WindowOperation.rightThird.title, "Right third")
+        XCTAssertEqual(WindowOperation.leftTwoThirds.title, "Left two thirds")
+        XCTAssertEqual(WindowOperation.rightTwoThirds.title, "Right two thirds")
+        XCTAssertEqual(WindowOperation.previousDisplay.title, "Move to previous display")
+    }
+
+    func testThirdsOnLandscapeScreenWithNonZeroOriginAreColumns() throws {
+        let secondary = CGRect(x: 1440, y: 25, width: 1800, height: 1000)
+        let window = CGRect(x: 1500, y: 100, width: 400, height: 300)
+        let expected: [(WindowOperation, CGRect)] = [
+            (.leftThird, CGRect(x: 1440, y: 25, width: 600, height: 1000)),
+            (.centerThird, CGRect(x: 2040, y: 25, width: 600, height: 1000)),
+            (.rightThird, CGRect(x: 2640, y: 25, width: 600, height: 1000)),
+            (.leftTwoThirds, CGRect(x: 1440, y: 25, width: 1200, height: 1000)),
+            (.rightTwoThirds, CGRect(x: 2040, y: 25, width: 1200, height: 1000))
+        ]
+        for (operation, frame) in expected {
+            assertRect(try WindowLayout.target(for: operation, original: window, screens: [CGRect(x: 0, y: 0, width: 1440, height: 900), secondary]), frame)
+        }
+    }
+
+    func testThirdsOnPortraitScreenAreBandsFromTopToBottom() throws {
+        let portrait = CGRect(x: -900, y: 30, width: 900, height: 1500)
+        let window = CGRect(x: -800, y: 200, width: 300, height: 300)
+        let expected: [(WindowOperation, CGRect)] = [
+            (.leftThird, CGRect(x: -900, y: 30, width: 900, height: 500)),
+            (.centerThird, CGRect(x: -900, y: 530, width: 900, height: 500)),
+            (.rightThird, CGRect(x: -900, y: 1030, width: 900, height: 500)),
+            (.leftTwoThirds, CGRect(x: -900, y: 30, width: 900, height: 1000)),
+            (.rightTwoThirds, CGRect(x: -900, y: 530, width: 900, height: 1000))
+        ]
+        for (operation, frame) in expected {
+            assertRect(try WindowLayout.target(for: operation, original: window, screens: [portrait]), frame)
+        }
+        // A square screen counts as landscape: columns, not bands.
+        let square = CGRect(x: 0, y: 0, width: 900, height: 900)
+        assertRect(try WindowLayout.target(for: .centerThird, original: CGRect(x: 10, y: 10, width: 100, height: 100), screens: [square]),
+                   CGRect(x: 300, y: 0, width: 300, height: 900))
+    }
+
+    func testThirdsTileTheScreenExactlyOnEveryOrientation() throws {
+        let screens = [CGRect(x: 13.5, y: 22, width: 1366.25, height: 777),
+                       CGRect(x: -400.25, y: 40.5, width: 777, height: 1366.25)]
+        for display in screens {
+            let window = CGRect(x: display.minX + 10, y: display.minY + 10, width: 100, height: 100)
+            func frame(_ operation: WindowOperation) throws -> CGRect {
+                try WindowLayout.target(for: operation, original: window, screens: [display])
+            }
+            let first = try frame(.leftThird)
+            let middle = try frame(.centerThird)
+            let last = try frame(.rightThird)
+            let tolerance: CGFloat = 0.000001
+            if display.width >= display.height {
+                XCTAssertEqual(first.maxX, middle.minX, accuracy: tolerance)
+                XCTAssertEqual(middle.maxX, last.minX, accuracy: tolerance)
+                XCTAssertEqual(first.minX, display.minX, accuracy: tolerance)
+                XCTAssertEqual(last.maxX, display.maxX, accuracy: tolerance)
+            } else {
+                XCTAssertEqual(first.maxY, middle.minY, accuracy: tolerance)
+                XCTAssertEqual(middle.maxY, last.minY, accuracy: tolerance)
+                XCTAssertEqual(first.minY, display.minY, accuracy: tolerance)
+                XCTAssertEqual(last.maxY, display.maxY, accuracy: tolerance)
+            }
+            assertRect(first.union(middle).union(last), display)
+            assertRect(first.union(middle), try frame(.leftTwoThirds))
+            assertRect(middle.union(last), try frame(.rightTwoThirds))
+        }
+    }
+
+    func testPreviousDisplayMirrorsNextDisplayAcrossThreeDisplays() throws {
+        let displays = [CGRect(x: 0, y: 0, width: 1000, height: 800),
+                        CGRect(x: 1000, y: 0, width: 1200, height: 900),
+                        CGRect(x: -1500, y: -200, width: 1500, height: 1000)]
+        let frame = CGRect(x: 400, y: 300, width: 200, height: 200)
+        let onSecond = try WindowLayout.target(for: .nextDisplay, original: frame, screens: displays)
+        assertRect(onSecond, CGRect(x: 1500, y: 350, width: 200, height: 200))
+        assertRect(try WindowLayout.target(for: .previousDisplay, original: onSecond, screens: displays), frame)
+        // Previous from the first display wraps to the last one, and next from there wraps back.
+        let onThird = try WindowLayout.target(for: .previousDisplay, original: frame, screens: displays)
+        assertRect(onThird, CGRect(x: -850, y: 200, width: 200, height: 200))
+        assertRect(try WindowLayout.target(for: .nextDisplay, original: onThird, screens: displays), frame)
+        var cycled = frame
+        for _ in displays {
+            cycled = try WindowLayout.target(for: .nextDisplay, original: cycled, screens: displays)
+        }
+        assertRect(cycled, frame)
+        for _ in displays {
+            cycled = try WindowLayout.target(for: .previousDisplay, original: cycled, screens: displays)
+        }
+        assertRect(cycled, frame)
+    }
+
+    func testPreviousDisplayRequiresAnotherScreen() {
+        XCTAssertThrowsError(try WindowLayout.target(for: .previousDisplay, original: original, screens: [screen])) {
+            XCTAssertEqual($0 as? WindowLayoutError, .requiresAnotherScreen)
+        }
     }
 
     private func assertRect(_ actual: CGRect, _ expected: CGRect, file: StaticString = #filePath, line: UInt = #line) {

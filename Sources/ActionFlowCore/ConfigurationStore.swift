@@ -35,6 +35,11 @@ public final class ConfigurationStore {
     public static let maximumFileBytes = 8 * 1_024 * 1_024
     public static let maximumSnapshots = 10
     private var historyURL: URL { url.appendingPathExtension("history") }
+    /// Reported when a file declares a schema older than the window layouts it contains.
+    /// Fixed text so it can be localized by exact match. It names the only combination possible while
+    /// schema 2 is the newest: content that needs schema 2 inside a file that declares schema 1.
+    public static let layoutSchemaMismatchMessage =
+        "This configuration uses window layouts that need schema 2, but the file declares schema 1."
     public let url: URL
     public var backupURL: URL { url.appendingPathExtension("backup") }
     private let lock = NSLock()
@@ -50,12 +55,27 @@ public final class ConfigurationStore {
         return try decode(readBounded(url))
     }
 
+    /// Like `load`, and also reports the schema version the file declared (the in-memory
+    /// `schemaVersion` is always normalized). A missing file yields the defaults and their minimum version.
+    public func loadWithDeclaredSchemaVersion() throws -> (configuration: Configuration, declaredSchemaVersion: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        try checkFileURL(url)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            let defaults = Configuration()
+            return (configuration: defaults, declaredSchemaVersion: defaults.minimumSchemaVersion)
+        }
+        return try decodeWithDeclaredVersion(readBounded(url))
+    }
+
     /// Validate and encode before touching either file. Preserve the exact previous bytes first.
     ///
     /// With `rotatingBackup` (the default) the previous live file always replaces the backup.
     /// With `rotatingBackup: false` an existing backup is kept as is, but only when the previous
-    /// live file is a valid configuration of the current schema. A missing, unreadable or corrupt previous file
+    /// live file is a valid configuration of a supported schema. A missing, unreadable or corrupt previous file
     /// still rotates, so its exact bytes are never lost. A newer schema is refused in both modes.
+    /// The file is written with the oldest schema that can represent the configuration, so
+    /// configurations without newer features stay readable by older app versions.
     public func save(_ configuration: Configuration, rotatingBackup: Bool = true) throws {
         lock.lock()
         defer { lock.unlock() }
@@ -68,10 +88,10 @@ public final class ConfigurationStore {
             let header = try? JSONDecoder().decode(SchemaHeader.self, from: previous)
             // A newer app may own this file. Even a valid replacement must not downgrade it.
             // A corrupt file can be replaced explicitly, but its exact bytes remain in the backup.
-            if let header, header.schemaVersion != Configuration.currentSchemaVersion {
+            if let header, header.schemaVersion > Configuration.currentSchemaVersion {
                 throw ConfigurationStoreError.unsupportedSchema(header.schemaVersion)
             }
-            // Keep the older backup only when the file being replaced is a fully valid current
+            // Keep the older backup only when the file being replaced is a fully valid supported
             // configuration. Anything else (including a valid header over a damaged body) rotates.
             let keepsExistingBackup = !rotatingBackup && header != nil
                 && FileManager.default.fileExists(atPath: backupURL.path)
@@ -113,7 +133,7 @@ public final class ConfigurationStore {
         if FileManager.default.fileExists(atPath: url.path) {
             let previous = try readBounded(url)
             if let header = try? JSONDecoder().decode(SchemaHeader.self, from: previous),
-               header.schemaVersion != Configuration.currentSchemaVersion {
+               header.schemaVersion > Configuration.currentSchemaVersion {
                 throw ConfigurationStoreError.unsupportedSchema(header.schemaVersion)
             }
             let archive = url.appendingPathExtension("before-restore-\(UUID().uuidString)")
@@ -324,7 +344,8 @@ public final class ConfigurationStore {
         try validate(configuration)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        let data = try encoder.encode(configuration)
+        // Declare the oldest schema that can represent the content so older apps keep reading it.
+        let data = try encoder.encode(configuration.withMinimumSchemaVersion())
         guard data.count <= Self.maximumFileBytes else {
             throw ConfigurationStoreError.fileTooLarge(maximumBytes: Self.maximumFileBytes)
         }
@@ -334,14 +355,24 @@ public final class ConfigurationStore {
     private struct SchemaHeader: Decodable { var schemaVersion: Int }
 
     private func decode(_ data: Data) throws -> Configuration {
+        try decodeWithDeclaredVersion(data).configuration
+    }
+
+    /// Any supported schema is read and normalized to this app's format. A file that declares an
+    /// older schema than its content needs (for example schema 1 with a schema 2 window layout) is rejected.
+    private func decodeWithDeclaredVersion(_ data: Data) throws -> (configuration: Configuration, declaredSchemaVersion: Int) {
         let decoder = JSONDecoder()
         let header = try decoder.decode(SchemaHeader.self, from: data)
-        guard header.schemaVersion == Configuration.currentSchemaVersion else {
+        guard Configuration.supportedSchemaVersions.contains(header.schemaVersion) else {
             throw ConfigurationStoreError.unsupportedSchema(header.schemaVersion)
         }
-        let configuration = try decoder.decode(Configuration.self, from: data)
+        var configuration = try decoder.decode(Configuration.self, from: data)
+        guard header.schemaVersion >= configuration.minimumSchemaVersion else {
+            throw ConfigurationStoreError.invalidConfiguration([Self.layoutSchemaMismatchMessage])
+        }
+        configuration.schemaVersion = Configuration.currentSchemaVersion
         try validate(configuration)
-        return configuration
+        return (configuration: configuration, declaredSchemaVersion: header.schemaVersion)
     }
 
     /// The exact content checks `save` applies before writing, without touching any file.
@@ -358,7 +389,7 @@ public final class ConfigurationStore {
 
     /// Shared by `validate` and `validationErrors` so the two can never drift apart.
     private static func validationFailure(for configuration: Configuration) -> ConfigurationStoreError? {
-        guard configuration.schemaVersion == Configuration.currentSchemaVersion else {
+        guard Configuration.supportedSchemaVersions.contains(configuration.schemaVersion) else {
             return .unsupportedSchema(configuration.schemaVersion)
         }
         guard configuration.rules.count <= RuleValidator.maximumRules else {

@@ -26,3 +26,6 @@ This is an ad-hoc-signed Alpha release, without Apple notarization. The in-app g
 - F13–F20 and keypad keys have readable names.
 - The recovery backup keeps an earlier version instead of the last autosave: it is refreshed at most every 10 minutes and before imports and templates.
 - Rules can be switched on and off from the rule list.
+- New window layouts: left, center and right third, left and right two thirds (top to bottom on portrait displays), and Move to previous display, with a Window thirds template.
+- Configurations that use the new layouts are saved as schema 2, which 0.1.0 Alpha 7 and earlier cannot open; all other configurations stay readable by older versions.
+- Window layout errors are shown in the interface language.

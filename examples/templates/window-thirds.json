@@ -1,0 +1,188 @@
+{
+  "allowScripts" : false,
+  "automationEnabled" : false,
+  "launchAtLogin" : false,
+  "rules" : [
+    {
+      "actions" : [
+        {
+          "delaySeconds" : 1,
+          "id" : "47465450-0007-0001-8000-000000000001",
+          "keyCode" : 0,
+          "kind" : "window",
+          "modifiers" : 1048576,
+          "text" : "",
+          "windowOperation" : "leftThird"
+        }
+      ],
+      "conditions" : {
+        "appBundleIdentifiers" : [
+
+        ],
+        "excludedAppBundleIdentifiers" : [
+
+        ]
+      },
+      "cooldown" : 0.5,
+      "enabled" : false,
+      "group" : "Built-in templates",
+      "id" : "47465450-0007-0001-8000-000000000000",
+      "name" : "Window to left third",
+      "trigger" : {
+        "appBundleIdentifier" : "",
+        "intervalSeconds" : 60,
+        "keyCode" : 2,
+        "kind" : "shortcut",
+        "modifiers" : 786432,
+        "mouseButton" : 2,
+        "passThrough" : false,
+        "scrollDirection" : "up"
+      }
+    },
+    {
+      "actions" : [
+        {
+          "delaySeconds" : 1,
+          "id" : "47465450-0007-0002-8000-000000000001",
+          "keyCode" : 0,
+          "kind" : "window",
+          "modifiers" : 1048576,
+          "text" : "",
+          "windowOperation" : "centerThird"
+        }
+      ],
+      "conditions" : {
+        "appBundleIdentifiers" : [
+
+        ],
+        "excludedAppBundleIdentifiers" : [
+
+        ]
+      },
+      "cooldown" : 0.5,
+      "enabled" : false,
+      "group" : "Built-in templates",
+      "id" : "47465450-0007-0002-8000-000000000000",
+      "name" : "Window to center third",
+      "trigger" : {
+        "appBundleIdentifier" : "",
+        "intervalSeconds" : 60,
+        "keyCode" : 15,
+        "kind" : "shortcut",
+        "modifiers" : 786432,
+        "mouseButton" : 2,
+        "passThrough" : false,
+        "scrollDirection" : "up"
+      }
+    },
+    {
+      "actions" : [
+        {
+          "delaySeconds" : 1,
+          "id" : "47465450-0007-0003-8000-000000000001",
+          "keyCode" : 0,
+          "kind" : "window",
+          "modifiers" : 1048576,
+          "text" : "",
+          "windowOperation" : "rightThird"
+        }
+      ],
+      "conditions" : {
+        "appBundleIdentifiers" : [
+
+        ],
+        "excludedAppBundleIdentifiers" : [
+
+        ]
+      },
+      "cooldown" : 0.5,
+      "enabled" : false,
+      "group" : "Built-in templates",
+      "id" : "47465450-0007-0003-8000-000000000000",
+      "name" : "Window to right third",
+      "trigger" : {
+        "appBundleIdentifier" : "",
+        "intervalSeconds" : 60,
+        "keyCode" : 5,
+        "kind" : "shortcut",
+        "modifiers" : 786432,
+        "mouseButton" : 2,
+        "passThrough" : false,
+        "scrollDirection" : "up"
+      }
+    },
+    {
+      "actions" : [
+        {
+          "delaySeconds" : 1,
+          "id" : "47465450-0007-0004-8000-000000000001",
+          "keyCode" : 0,
+          "kind" : "window",
+          "modifiers" : 1048576,
+          "text" : "",
+          "windowOperation" : "leftTwoThirds"
+        }
+      ],
+      "conditions" : {
+        "appBundleIdentifiers" : [
+
+        ],
+        "excludedAppBundleIdentifiers" : [
+
+        ]
+      },
+      "cooldown" : 0.5,
+      "enabled" : false,
+      "group" : "Built-in templates",
+      "id" : "47465450-0007-0004-8000-000000000000",
+      "name" : "Window to left two thirds",
+      "trigger" : {
+        "appBundleIdentifier" : "",
+        "intervalSeconds" : 60,
+        "keyCode" : 14,
+        "kind" : "shortcut",
+        "modifiers" : 786432,
+        "mouseButton" : 2,
+        "passThrough" : false,
+        "scrollDirection" : "up"
+      }
+    },
+    {
+      "actions" : [
+        {
+          "delaySeconds" : 1,
+          "id" : "47465450-0007-0005-8000-000000000001",
+          "keyCode" : 0,
+          "kind" : "window",
+          "modifiers" : 1048576,
+          "text" : "",
+          "windowOperation" : "rightTwoThirds"
+        }
+      ],
+      "conditions" : {
+        "appBundleIdentifiers" : [
+
+        ],
+        "excludedAppBundleIdentifiers" : [
+
+        ]
+      },
+      "cooldown" : 0.5,
+      "enabled" : false,
+      "group" : "Built-in templates",
+      "id" : "47465450-0007-0005-8000-000000000000",
+      "name" : "Window to right two thirds",
+      "trigger" : {
+        "appBundleIdentifier" : "",
+        "intervalSeconds" : 60,
+        "keyCode" : 17,
+        "kind" : "shortcut",
+        "modifiers" : 786432,
+        "mouseButton" : 2,
+        "passThrough" : false,
+        "scrollDirection" : "up"
+      }
+    }
+  ],
+  "schemaVersion" : 2
+}

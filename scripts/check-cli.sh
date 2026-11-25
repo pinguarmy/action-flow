@@ -87,6 +87,31 @@ with tempfile.TemporaryDirectory(prefix='actionflow-cli-checks-') as temporary:
     future = root / 'future.json'
     future.write_text(json.dumps({'schemaVersion': 999, 'rules': []}))
     invoke('validate', future, code=1)
+    # Files are written with the oldest schema that can represent them; inspection reports the declared one.
+    thirds_file = root / 'thirds-pack.json'
+    invoke('template', 'window-thirds', thirds_file)
+    check(json.loads(thirds_file.read_text())['schemaVersion'] == 2, 'template with schema 2 layouts is written as schema 2')
+    check(json.loads(invoke('validate', thirds_file).stdout) == {'valid': True, 'ruleCount': 5, 'schemaVersion': 2}, 'validate reports declared schema 2')
+    check(json.loads(invoke('summarize', thirds_file).stdout)['schemaVersion'] == 2, 'summarize reports declared schema 2')
+    check(json.loads(invoke('plan', thirds_file).stdout)['schemaVersion'] == 2, 'plan reports declared schema 2')
+    halves_file = root / 'halves-pack.json'
+    invoke('template', 'window-halves', halves_file)
+    check(json.loads(halves_file.read_text())['schemaVersion'] == 1, 'template without new layouts stays schema 1')
+    check(json.loads(invoke('validate', halves_file).stdout)['schemaVersion'] == 1, 'validate reports declared schema 1')
+    declares_two = json.loads(halves_file.read_text())
+    declares_two['schemaVersion'] = 2
+    declares_two_file = root / 'declares-two.json'
+    declares_two_file.write_text(json.dumps(declares_two))
+    check(json.loads(invoke('validate', declares_two_file).stdout)['schemaVersion'] == 2, 'schema 2 file without new layouts is accepted and reported as 2')
+    check(json.loads(invoke('plan', declares_two_file).stdout)['schemaVersion'] == 2, 'plan reports the declared version, not the app format')
+    declares_one = json.loads(thirds_file.read_text())
+    declares_one['schemaVersion'] = 1
+    declares_one_file = root / 'declares-one.json'
+    declares_one_file.write_text(json.dumps(declares_one))
+    too_low = invoke('validate', declares_one_file, code=1)
+    check('need schema 2' in json.loads(too_low.stderr)['error'], 'schema 1 file with schema 2 layouts is rejected')
+    invoke('plan', declares_one_file, code=1)
+    check(json.loads(declares_one_file.read_text())['schemaVersion'] == 1, 'rejected file is not modified')
     oversized = root / 'oversized.json'
     with oversized.open('wb') as handle:
         handle.truncate(8 * 1024 * 1024 + 1)

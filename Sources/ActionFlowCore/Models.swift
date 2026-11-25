@@ -149,7 +149,22 @@ public enum WindowOperation: String, Codable, CaseIterable, Identifiable, Sendab
     case leftHalf, rightHalf, topHalf, bottomHalf
     case topLeft, topRight, bottomLeft, bottomRight
     case maximize, center, centerTwoThirds, larger, smaller, nextDisplay, restore
+    // Introduced in schema 2. Append new cases here and give them an `introducedInSchema`.
+    case leftThird, centerThird, rightThird, leftTwoThirds, rightTwoThirds, previousDisplay
     public var id: String { rawValue }
+
+    /// The first configuration schema whose readers can decode this operation.
+    /// A configuration that uses any operation introduced in schema 2 is written as schema 2,
+    /// so older app versions never meet a raw value they cannot decode.
+    public var introducedInSchema: Int {
+        switch self {
+        case .leftThird, .centerThird, .rightThird, .leftTwoThirds, .rightTwoThirds, .previousDisplay:
+            return 2
+        case .leftHalf, .rightHalf, .topHalf, .bottomHalf, .topLeft, .topRight, .bottomLeft, .bottomRight,
+             .maximize, .center, .centerTwoThirds, .larger, .smaller, .nextDisplay, .restore:
+            return 1
+        }
+    }
     public var title: String {
         switch self {
         case .leftHalf: return "Left half"
@@ -167,6 +182,12 @@ public enum WindowOperation: String, Codable, CaseIterable, Identifiable, Sendab
         case .smaller: return "Make 10% smaller"
         case .nextDisplay: return "Move to next display"
         case .restore: return "Restore previous size"
+        case .leftThird: return "Left third"
+        case .centerThird: return "Center third"
+        case .rightThird: return "Right third"
+        case .leftTwoThirds: return "Left two thirds"
+        case .rightTwoThirds: return "Right two thirds"
+        case .previousDisplay: return "Move to previous display"
         }
     }
 }
@@ -248,7 +269,12 @@ public struct AutomationRule: Codable, Equatable, Identifiable, Sendable {
 }
 
 public struct Configuration: Codable, Equatable, Sendable {
-    public static let currentSchemaVersion = 1
+    /// The newest schema this app reads and writes.
+    public static let currentSchemaVersion = 2
+    /// Every schema version this app can read. Older files stay readable.
+    public static let supportedSchemaVersions: ClosedRange<Int> = 1...2
+    /// In memory this is this app's format (`currentSchemaVersion`), whatever version the file declared.
+    /// `ConfigurationStore` writes `minimumSchemaVersion` instead, so files stay readable by older apps.
     public var schemaVersion: Int
     public var rules: [AutomationRule]
     public var automationEnabled: Bool
@@ -272,11 +298,33 @@ public struct Configuration: Codable, Equatable, Sendable {
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         // Files must identify their schema. Optional settings may be absent in v1 exports.
-        schemaVersion = try values.decode(Int.self, forKey: .schemaVersion)
+        // Any supported file normalizes to this app's format so in-memory equality never depends on the
+        // declared version. Unsupported versions keep their value; ConfigurationStore rejects them.
+        let declared = try values.decode(Int.self, forKey: .schemaVersion)
+        schemaVersion = Configuration.supportedSchemaVersions.contains(declared) ? Configuration.currentSchemaVersion : declared
         rules = try values.decode([AutomationRule].self, forKey: .rules)
         automationEnabled = try values.decodeIfPresent(Bool.self, forKey: .automationEnabled) ?? false
         allowScripts = try values.decodeIfPresent(Bool.self, forKey: .allowScripts) ?? false
         launchAtLogin = try values.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
+    }
+
+    /// The oldest schema that can represent this configuration. Every action counts, whatever its kind,
+    /// because its window operation is always serialized and an older reader would fail to decode it.
+    public var minimumSchemaVersion: Int {
+        var minimum = 1
+        for rule in rules {
+            for action in rule.actions {
+                minimum = max(minimum, action.windowOperation.introducedInSchema)
+            }
+        }
+        return minimum
+    }
+
+    /// A copy whose `schemaVersion` is `minimumSchemaVersion`: the form written to disk.
+    public func withMinimumSchemaVersion() -> Configuration {
+        var copy = self
+        copy.schemaVersion = minimumSchemaVersion
+        return copy
     }
 }
 

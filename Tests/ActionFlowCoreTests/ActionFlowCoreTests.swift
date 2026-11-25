@@ -26,7 +26,9 @@ final class ActionFlowCoreTests: XCTestCase {
         XCTAssertFalse(configuration.automationEnabled)
         XCTAssertFalse(configuration.allowScripts)
         XCTAssertFalse(configuration.launchAtLogin)
-        XCTAssertEqual(configuration.schemaVersion, 1)
+        // In memory the version is this app's format. What is written is the minimum the content needs.
+        XCTAssertEqual(configuration.schemaVersion, Configuration.currentSchemaVersion)
+        XCTAssertEqual(configuration.minimumSchemaVersion, 1)
         XCTAssertFalse(configuration.rules.isEmpty)
         for rule in configuration.rules {
             XCTAssertFalse(rule.enabled)

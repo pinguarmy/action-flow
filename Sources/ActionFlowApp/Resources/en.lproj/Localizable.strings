@@ -705,3 +705,21 @@
 "Rules save automatically as versioned JSON in Application Support. The backup keeps an earlier version, refreshed at most every 10 minutes and before each import or template." = "Rules save automatically as versioned JSON in Application Support. The backup keeps an earlier version, refreshed at most every 10 minutes and before each import or template.";
 "Enable %@" = "Enable %@";
 "Both key presses still reach the active app, unless a single-press rule on the same shortcut keeps them. That single-press rule also runs." = "Both key presses still reach the active app, unless a single-press rule on the same shortcut keeps them. That single-press rule also runs.";
+"Left third" = "Left third";
+"Center third" = "Center third";
+"Right third" = "Right third";
+"Left two thirds" = "Left two thirds";
+"Right two thirds" = "Right two thirds";
+"Move to previous display" = "Move to previous display";
+"Window thirds" = "Window thirds";
+"Place the focused window in a third or two thirds of its display. Works best on wide displays." = "Place the focused window in a third or two thirds of its display. Works best on wide displays.";
+"This configuration uses window layouts that need schema 2, but the file declares schema 1." = "This configuration uses window layouts that need schema 2, but the file declares schema 1.";
+
+/* Window layout errors. */
+"The original window frame must have finite coordinates and positive dimensions." = "The original window frame must have finite coordinates and positive dimensions.";
+"No visible display frame is available." = "No visible display frame is available.";
+"Every display frame must have finite coordinates and positive dimensions." = "Every display frame must have finite coordinates and positive dimensions.";
+"The saved window frame is invalid." = "The saved window frame is invalid.";
+"Moving to another display requires at least two displays." = "Moving to another display requires at least two displays.";
+"This window has no saved frame from this session." = "This window has no saved frame from this session.";
+"The requested layout could not produce valid window geometry." = "The requested layout could not produce valid window geometry.";

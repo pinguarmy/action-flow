@@ -705,3 +705,21 @@
 "Rules save automatically as versioned JSON in Application Support. The backup keeps an earlier version, refreshed at most every 10 minutes and before each import or template." = "规则会以带版本号的 JSON 自动保存在 Application Support 目录。备份保留较早的版本，最多每 10 分钟更新一次，每次导入或添加模板前也会更新。";
 "Enable %@" = "启用“%@”";
 "Both key presses still reach the active app, unless a single-press rule on the same shortcut keeps them. That single-press rule also runs." = "两次按键仍会传给当前应用，除非使用同一快捷键的单按规则保留了按键。该单按规则也会运行。";
+"Left third" = "左三分之一屏";
+"Center third" = "居中三分之一屏";
+"Right third" = "右三分之一屏";
+"Left two thirds" = "左三分之二屏";
+"Right two thirds" = "右三分之二屏";
+"Move to previous display" = "移到上一台显示器";
+"Window thirds" = "窗口三等分";
+"Place the focused window in a third or two thirds of its display. Works best on wide displays." = "将当前焦点窗口放到所在显示器的三分之一或三分之二区域，在宽屏显示器上效果最佳。";
+"This configuration uses window layouts that need schema 2, but the file declares schema 1." = "此配置使用了需要架构版本 2 的窗口布局，但文件声明的是架构版本 1。";
+
+/* Window layout errors. */
+"The original window frame must have finite coordinates and positive dimensions." = "原窗口位置和尺寸必须是有效的有限数值，且宽高大于零。";
+"No visible display frame is available." = "没有可用的显示器区域。";
+"Every display frame must have finite coordinates and positive dimensions." = "每个显示器区域都必须是有效的有限数值，且宽高大于零。";
+"The saved window frame is invalid." = "保存的窗口位置无效。";
+"Moving to another display requires at least two displays." = "移到另一块显示器需要至少两块显示器。";
+"This window has no saved frame from this session." = "这个窗口在本次运行中没有保存过的位置。";
+"The requested layout could not produce valid window geometry." = "无法为请求的布局算出有效的窗口位置和尺寸。";

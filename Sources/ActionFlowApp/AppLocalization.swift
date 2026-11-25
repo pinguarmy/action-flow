@@ -90,6 +90,8 @@ enum AppLocalization {
             }
             return text(leaseError.localizedDescription)
         }
+        // Window geometry errors carry fixed English text, translated by exact lookup.
+        if error is WindowLayoutError { return text(error.localizedDescription) }
         return error.localizedDescription
     }
 

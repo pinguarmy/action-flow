@@ -237,7 +237,7 @@ do {
     try check(queue.next(rules: [shortcut, timerRule], context: context)?.id == timerRule.id, "queue gives following rule its turn")
     let screen = CGRect(x: 0, y: 20, width: 1200, height: 800)
     let originalFrame = CGRect(x: 300, y: 220, width: 600, height: 400)
-    try check(WindowOperation.allCases.count == 15, "fifteen window operations exposed")
+    try check(WindowOperation.allCases.count == 21, "twenty-one window operations exposed")
     try check(try WindowLayout.target(for: .topLeft, original: originalFrame, screens: [screen]) == CGRect(x:0,y:20,width:600,height:400), "top-left quarter geometry")
     try check(try WindowLayout.target(for: .bottomRight, original: originalFrame, screens: [screen]) == CGRect(x:600,y:420,width:600,height:400), "bottom-right quarter geometry")
     try check(try WindowLayout.target(for: .centerTwoThirds, original: originalFrame, screens: [screen]) == CGRect(x:200,y:20,width:800,height:800), "centered two-thirds geometry")
@@ -246,12 +246,15 @@ do {
     let smaller = try WindowLayout.target(for: .smaller, original: originalFrame, screens: [screen])
     try check(abs(smaller.width - 540) < 0.001, "smaller reduces window size")
     for operation in WindowOperation.allCases {
-        if operation == .nextDisplay { continue }
+        if operation == .nextDisplay || operation == .previousDisplay { continue }
         let frame = try WindowLayout.target(for: operation, original: originalFrame, screens: [screen], restoreFrame: originalFrame)
         try check(screen.contains(frame) && frame.width > 0 && frame.height > 0, "layout fits visible screen \(operation.rawValue)")
     }
     try rejects("layout rejects invalid dimensions") { _ = try WindowLayout.target(for: .maximize, original: CGRect(x:0,y:0,width:0,height:10), screens:[screen]) }
     try rejects("next display needs another display") { _ = try WindowLayout.target(for: .nextDisplay, original: originalFrame, screens:[screen]) }
+    try rejects("previous display needs another display") { _ = try WindowLayout.target(for: .previousDisplay, original: originalFrame, screens:[screen]) }
+    try check(try WindowLayout.target(for: .leftThird, original: originalFrame, screens: [screen]) == CGRect(x:0,y:20,width:400,height:800), "left third geometry")
+    try check(try WindowLayout.target(for: .rightTwoThirds, original: originalFrame, screens: [screen]) == CGRect(x:400,y:20,width:800,height:800), "right two thirds geometry")
     let recoveredFrame = try WindowLayout.target(for: .restore, original: originalFrame, screens:[screen],restoreFrame:CGRect(x:-3000,y:-2000,width:1800,height:1200))
     try check(screen.contains(recoveredFrame), "restore refits disconnected display frame")
     let requirementRule = AutomationRule(name: "Requirements", trigger: Trigger(kind:.shortcut), actions:[AutomationAction(kind:.window),AutomationAction(kind:.notification,text:"test"),AutomationAction(kind:.shellScript,text:"exit 0")])
