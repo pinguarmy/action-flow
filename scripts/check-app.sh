@@ -9,6 +9,7 @@ swiftc -swift-version 5 -parse-as-library -I "$BIN/Modules" \
  "$ROOT/Sources/ActionFlowApp/AppModel.swift" \
  "$ROOT/Sources/ActionFlowApp/AppLocalization.swift" \
  "$ROOT"/Sources/ActionFlowApp/Runtime/*.swift \
+ "$ROOT"/Sources/ActionFlowApp/Model/*.swift \
  "$ROOT"/Sources/ActionFlowApp/Views/*.swift \
  "$BIN/ActionFlowCore.build/Models.swift.o" \
  "$BIN/ActionFlowCore.build/MenuCommandPath.swift.o" \

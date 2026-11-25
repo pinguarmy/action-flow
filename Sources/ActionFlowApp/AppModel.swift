@@ -7,27 +7,6 @@ import ServiceManagement
 import SwiftUI
 import UserNotifications
 
-public enum SidebarSection: String, CaseIterable, Identifiable {
-    case rules, activity, permissions, settings, gestureLab
-    public var id: String { rawValue }
-    public var title: String { switch self { case .rules: return AppLocalization.text("Rules"); case .activity: return AppLocalization.text("Activity"); case .permissions: return AppLocalization.text("Permissions"); case .settings: return AppLocalization.text("Settings"); case .gestureLab: return AppLocalization.text("Gesture Lab") } }
-    public var systemImage: String { switch self { case .rules: return "slider.horizontal.3"; case .activity: return "clock.arrow.circlepath"; case .permissions: return "hand.raised"; case .settings: return "gearshape"; case .gestureLab: return "hand.draw" } }
-}
-public struct PermissionState {
-    public var accessibility = false
-    public var inputMonitoring = false
-    public var notifications = false
-}
-public struct ActivityEntry: Identifiable {
-    public let id = UUID()
-    public let date = Date()
-    public var ruleName: String
-    public var message: String
-    public var success: Bool
-    public var completedActions: Int? = nil
-    public var totalActions: Int? = nil
-}
-
 @MainActor
 final class AppModel: ObservableObject {
     @Published var configuration: Configuration {
@@ -35,9 +14,7 @@ final class AppModel: ObservableObject {
             // Runs on every in-place edit, so it must stay cheap and must never save.
             // The rules comparison is the only O(n) work; configureMonitor() never mutates configuration.
             guard oldValue.rules != configuration.rules else { return }
-            let interest = TriggerInterest(rules: configuration.rules)
-            guard interest != triggerInterest else { return }
-            triggerInterest = interest
+            guard router.refreshInterest(rules: configuration.rules) else { return }
             configureMonitor()
         }
     }
@@ -60,34 +37,21 @@ final class AppModel: ObservableObject {
     private let store: ConfigurationStore
     private var configurationLease: ConfigurationLease?
     var hasConfigurationLease: Bool { configurationLease != nil }
-    private let monitor = InputMonitor()
-    private let executor = ActionExecutor()
-    private var timer: Timer?
-    private var workspaceObserver: NSObjectProtocol?
-    private var lifecycleObservers: [NSObjectProtocol] = []
-    private var scheduler = RuleScheduler()
-    private var runningTask: Task<Void, Never>?
-    private var recorderToken: Any?
-    private var recordingTimeout: Task<Void, Never>?
-    private var busyRuleID: UUID?
+    private let router = TriggerRouter()
+    private let coordinator = RuleExecutionCoordinator()
+    private let recorder = ShortcutRecorder()
+    private let systemEvents = SystemEventObserver()
     private var persistedLaunchAtLogin = false
     private var persistenceBlocked = false
-    private var pendingRules = RuleExecutionQueue()
     private var previousAutomationEnabled = false
-    private var manualActivationTask: Task<Void, Never>?
-    private var manualActivationID: UUID?
     /// Every assignment records a configuration that was just loaded or written, which by
     /// construction passed the store's content validation, so no save-blocking issue remains.
     private var lastSavedConfiguration: Configuration? {
         didSet { if unsavedIssueCount != 0 { unsavedIssueCount = 0 } }
     }
     private var autosaveTask: Task<Void, Never>?
-    private var terminationObserver: NSObjectProtocol?
-    private var triggerInterest: TriggerInterest = []
     private var conflictCache: (rules: [AutomationRule], messages: [String])?
-    /// System uptime of the last write that rotated the recovery backup in this app session.
-    private var lastBackupRotation: TimeInterval?
-    private static let backupRotationInterval: TimeInterval = 10 * 60
+    private var backupRotation = BackupRotationPolicy()
 
     init(configurationURL: URL? = nil) {
         let url = configurationURL ?? Self.defaultConfigurationURL
@@ -103,7 +67,7 @@ final class AppModel: ObservableObject {
             for index in configuration.rules.indices { configuration.rules[index].enabled = false }
         }
         // `didSet` does not run for assignments inside init; seed the interest before any configureMonitor().
-        triggerInterest = TriggerInterest(rules: configuration.rules)
+        router.refreshInterest(rules: configuration.rules)
         if let app = NSWorkspace.shared.frontmostApplication, Self.isRegularTarget(app) { lastExternalApplication = app }
         selection = configuration.rules.first?.id
         persistedLaunchAtLogin = SMAppService.mainApp.status == .enabled
@@ -113,46 +77,32 @@ final class AppModel: ObservableObject {
         persistenceBlocked = loadError != nil
         if loadError == nil { lastSavedConfiguration = configuration }
         refreshPermissions()
-        monitor.onEvent = { [weak self] event in self?.handle(event) ?? false }
-        monitor.onStatus = { [weak self] message in self?.statusMessage = message }
-        workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
-            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-            let identifier = app.bundleIdentifier ?? ""
-            Task { @MainActor in
-                guard let self else { return }
-                self.scheduler.invalidatePendingShortcuts()
-                if Self.isRegularTarget(app) { self.lastExternalApplication = app }
-                self.handle(InputEvent(kind: .appActivated, appBundleIdentifier: identifier))
-            }
+        router.onEvent = { [weak self] event in self?.handle(event) ?? false }
+        router.onStatus = { [weak self] message in self?.statusMessage = message }
+        coordinator.rules = { [weak self] in self?.configuration.rules ?? [] }
+        coordinator.hasConfigurationLease = { [weak self] in self?.hasConfigurationLease ?? false }
+        coordinator.allowsScripts = { [weak self] in self?.configuration.allowScripts ?? false }
+        coordinator.missingCapabilities = { [weak self] rule in self?.missingCapabilities(for: rule, automatic: false) ?? [] }
+        coordinator.isEligibleForAutomaticExecution = { [weak self] context in self?.eligibleForAutomaticExecution(context) ?? false }
+        coordinator.currentProgress = { [weak self] in self?.executionProgress }
+        coordinator.publishExecuting = { [weak self] value in self?.isExecuting = value }
+        coordinator.publishProgress = { [weak self] value in self?.executionProgress = value }
+        coordinator.recordActivity = { [weak self] name, message, success, progress in
+            self?.appendActivity(name, message, success, progress: progress)
         }
-        for (notification, kind) in [(NSWorkspace.didLaunchApplicationNotification, TriggerKind.appLaunched), (NSWorkspace.didTerminateApplicationNotification, TriggerKind.appTerminated)] {
-            let token = NSWorkspace.shared.notificationCenter.addObserver(forName:notification,object:nil,queue:.main) { [weak self] note in
-                guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-                      let identifier = app.bundleIdentifier, !identifier.isEmpty,
-                      identifier != (Bundle.main.bundleIdentifier ?? "io.github.pinguarmy.actionflow"), identifier != "com.apple.loginwindow" else { return }
-                // Notification metadata only. Never launch/activate the event source.
-                Task { @MainActor in self?.handle(InputEvent(kind:kind,appBundleIdentifier:identifier)) }
-            }
-            lifecycleObservers.append(token)
+        systemEvents.onApplicationActivated = { [weak self] app, identifier in
+            guard let self else { return }
+            self.router.invalidatePendingShortcuts()
+            if Self.isRegularTarget(app) { self.lastExternalApplication = app }
+            self.handle(InputEvent(kind: .appActivated, appBundleIdentifier: identifier))
         }
-        for (notification, transition) in [(NSWorkspace.willSleepNotification, SessionTransition.willSleep), (NSWorkspace.didWakeNotification, SessionTransition.didWake), (NSWorkspace.sessionDidResignActiveNotification, SessionTransition.sessionResigned), (NSWorkspace.sessionDidBecomeActiveNotification, SessionTransition.sessionBecameActive)] {
-            let token = NSWorkspace.shared.notificationCenter.addObserver(forName:notification,object:nil,queue:.main) { [weak self] _ in
-                Task { @MainActor in self?.handleSessionTransition(transition) }
-            }
-            lifecycleObservers.append(token)
+        systemEvents.onApplicationLifecycle = { [weak self] kind, identifier in
+            self?.handle(InputEvent(kind: kind, appBundleIdentifier: identifier))
         }
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
-        }
-        timer?.tolerance = 0.2
-        // Termination must flush pending edits even when no window (and no SwiftUI observer) is alive.
-        // A Task would never run during termination, so run synchronously on the main queue.
-        terminationObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.shutdown()
-            }
-        }
+        systemEvents.onSessionTransition = { [weak self] transition in self?.handleSessionTransition(transition) }
+        systemEvents.onTick = { [weak self] in self?.tick() }
+        systemEvents.onWillTerminate = { [weak self] in self?.shutdown() }
+        systemEvents.start()
         if configuration.automationEnabled { configureMonitor() }
     }
 
@@ -208,7 +158,7 @@ final class AppModel: ObservableObject {
         return lastSavedConfiguration != configuration
     }
     /// Diagnostics/tests: the input kinds the enabled rules currently need.
-    var observedInputInterest: TriggerInterest { triggerInterest }
+    var observedInputInterest: TriggerInterest { router.interest }
     var availableCapabilities: Set<AutomationCapability> {
         var available: Set<AutomationCapability> = []
         if permissions.accessibility { available.insert(.accessibility) }
@@ -277,7 +227,7 @@ final class AppModel: ObservableObject {
             configuration.automationEnabled = false
             configuration.allowScripts = false
             errorMessage = AppLocalization.text("Saving is disabled in this instance. Close the other instance using this configuration and restart ActionFlow.")
-            monitor.stop()
+            router.stopMonitor()
             stopExecution()
             return
         }
@@ -285,7 +235,7 @@ final class AppModel: ObservableObject {
             configuration.automationEnabled = false
             configuration.allowScripts = false
             errorMessage = AppLocalization.text("Saving is disabled because the existing configuration could not be read. Export new work to a different file, then recover the original configuration before restarting.")
-            monitor.stop()
+            router.stopMonitor()
             stopExecution()
             return
         }
@@ -301,7 +251,7 @@ final class AppModel: ObservableObject {
             synchronizeRuntimeWithConfiguration()
             // Only ever lower the flag here (fail closed). execute(_:) reassigns it from the in-memory
             // configuration before each run, so this mainly matters for anything reading it between runs.
-            if !configuration.allowScripts { executor.allowScripts = false }
+            if !configuration.allowScripts { coordinator.allowScripts = false }
             configureMonitor()
             unsavedIssueCount = issues.count
             if announcingIssues {
@@ -341,45 +291,31 @@ final class AppModel: ObservableObject {
             configuration.automationEnabled = false
             previousAutomationEnabled = false
             errorMessage = AppLocalization.format("Could not save configuration. Automation was paused: %@", AppLocalization.describe(error)) + rollbackMessage
-            monitor.stop()
+            router.stopMonitor()
             stopExecution()
             return
         }
-        executor.allowScripts = configuration.allowScripts
+        coordinator.allowScripts = configuration.allowScripts
         configureMonitor()
     }
-    /// Edits autosave shortly after each pause, so rotating the recovery backup on every write would
-    /// leave it only one typing burst old. Rotate on the first write of this app session, then at most
-    /// every 10 minutes; imports and templates always rotate (`forceBackupRotation`). The backup
-    /// therefore holds the configuration from before the current editing session (or from at most
-    /// ~10 minutes of edits ago), or from just before the last import or template. Restores never
-    /// touch the backup. The store still rotates whenever the previous file is unreadable or no backup
-    /// exists yet, so damaged bytes are always preserved.
+    /// The backup rotation rules (first write of the session, then at most every 10 minutes, always for
+    /// imports and templates) live in `BackupRotationPolicy`.
     private func writeConfiguration(_ configuration: Configuration, forceBackupRotation: Bool = false) throws {
         let now = ProcessInfo.processInfo.systemUptime
-        var rotate = forceBackupRotation
-        if let last = lastBackupRotation {
-            if now - last >= Self.backupRotationInterval { rotate = true }
-        } else {
-            rotate = true
-        }
+        let rotate = backupRotation.shouldRotate(now: now, forced: forceBackupRotation)
         try store.save(configuration, rotatingBackup: rotate)
-        if rotate { lastBackupRotation = now }
+        if rotate { backupRotation.recordRotation(at: now) }
     }
     /// Shared by the written and not-written save paths.
     private func synchronizeRuntimeWithConfiguration() {
         // Changes in a live chain never take effect halfway through execution.
         if previousAutomationEnabled && !configuration.automationEnabled { stopExecution() }
-        if previousAutomationEnabled != configuration.automationEnabled { scheduler.reset() }
-        scheduler.removeStaleRules(configuration.rules)
+        if previousAutomationEnabled != configuration.automationEnabled { router.reset() }
+        router.removeStaleRules(configuration.rules)
         previousAutomationEnabled = configuration.automationEnabled
     }
     func configureMonitor() {
-        if hasConfigurationLease && configuration.automationEnabled && permissions.inputMonitoring && SessionSafety.allowsExecution
-            && triggerInterest.needsInputMonitoring {
-            // No-op when already running with the same input interest; recreates the tap otherwise.
-            monitor.start(interest: triggerInterest)
-        } else { monitor.stop() }
+        router.reconfigure(canRun: hasConfigurationLease && configuration.automationEnabled && permissions.inputMonitoring && SessionSafety.allowsExecution)
     }
     func refreshPermissions() {
         permissions.accessibility = AXIsProcessTrusted()
@@ -427,7 +363,7 @@ final class AppModel: ObservableObject {
     func runRule(_ rule: AutomationRule) {
         guard hasConfigurationLease else { appendActivity(rule.name, AppLocalization.text("Not run: this instance does not own the configuration writer lease."), false); return }
         guard SessionSafety.allowsExecution else { appendActivity(rule.name, AppLocalization.text("Not run: the desktop session is locked or unavailable."), false); return }
-        guard !isExecuting, manualActivationTask == nil else { appendActivity(rule.name, AppLocalization.text("Not run: another action chain is running or preparing."), false); return }
+        guard !isExecuting, !coordinator.isPreparingManualRun else { appendActivity(rule.name, AppLocalization.text("Not run: another action chain is running or preparing."), false); return }
         guard RuleValidator.validate(rule).isEmpty else { appendActivity(rule.name, AppLocalization.text("Not run: fix rule validation errors first."), false); return }
         let missing = missingCapabilities(for: rule, automatic: false)
         guard missing.isEmpty else { appendActivity(rule.name, AppLocalization.format("Not run: missing %@. Review Permissions and Settings.", missing.map { AppLocalization.text($0.title) }.joined(separator: ", ")), false); return }
@@ -442,24 +378,7 @@ final class AppModel: ObservableObject {
         if NSWorkspace.shared.frontmostApplication?.processIdentifier != target.processIdentifier {
             guard target.activate(options: []) else { appendActivity(rule.name, AppLocalization.text("The target application could not be activated."), false); return }
         }
-        let activationID = UUID()
-        manualActivationID = activationID
-        isExecuting = true
-        manualActivationTask = Task { [weak self] in
-            guard let self else { return }
-            defer {
-                if self.manualActivationID == activationID {
-                    self.manualActivationTask = nil; self.manualActivationID = nil
-                    if self.runningTask == nil { self.isExecuting = false }
-                }
-            }
-            for _ in 0..<40 {
-                guard !Task.isCancelled, self.manualActivationID == activationID else { return }
-                if NSWorkspace.shared.frontmostApplication?.processIdentifier == target.processIdentifier { self.execute(rule); return }
-                do { try await Task.sleep(nanoseconds: 50_000_000) } catch { return }
-            }
-            self.appendActivity(rule.name, AppLocalization.text("The target did not become active within two seconds. No actions were run."), false)
-        }
+        coordinator.beginManualRun(rule, target: target)
     }
     func addTemplate(_ template: RuleTemplate) {
         guard !persistenceBlocked else { errorMessage = AppLocalization.text("Recover the saved configuration before adding a template."); return }
@@ -473,7 +392,7 @@ final class AppModel: ObservableObject {
             lastSavedConfiguration = candidate
             clearRuleFilters()
             selection = rules.first?.id
-            scheduler.removeStaleRules(configuration.rules)
+            router.removeStaleRules(configuration.rules)
             statusMessage = AppLocalization.format("Added %lld disabled template rules. Automation and script settings were not changed.", Int64(rules.count))
             errorMessage = nil
         } catch { errorMessage = AppLocalization.format("Template was not added: %@", AppLocalization.describe(error)) }
@@ -503,9 +422,9 @@ final class AppModel: ObservableObject {
             previousAutomationEnabled = false
             persistenceBlocked = false
             lastSavedConfiguration = configuration
-            executor.allowScripts = false
+            coordinator.allowScripts = false
             selection = configuration.rules.first?.id
-            scheduler.reset()
+            router.reset()
             errorMessage = nil
             statusMessage = AppLocalization.text("Snapshot restored with every rule disabled.") + (restored.preservedCurrentFileURL.map { " " + AppLocalization.format("Previous file preserved at %@.", $0.lastPathComponent) } ?? "")
             snapshots = try store.listSnapshots()
@@ -516,11 +435,11 @@ final class AppModel: ObservableObject {
         // A failed restore must not silently resume the previous live automation.
         configuration.automationEnabled = false
         configuration.allowScripts = false
-        executor.allowScripts = false
+        coordinator.allowScripts = false
         previousAutomationEnabled = false
         stopExecution()
-        monitor.stop()
-        scheduler.reset()
+        router.stopMonitor()
+        router.reset()
     }
     func restorePreviousBackup() {
         guard hasConfigurationLease else { errorMessage = AppLocalization.text("Backup restore is disabled in this instance because another writer owns the configuration."); return }
@@ -533,9 +452,9 @@ final class AppModel: ObservableObject {
             previousAutomationEnabled = false
             persistenceBlocked = false
             lastSavedConfiguration = configuration
-            executor.allowScripts = false
+            coordinator.allowScripts = false
             selection = configuration.rules.first?.id
-            scheduler.reset()
+            router.reset()
             errorMessage = nil
             statusMessage = AppLocalization.text("Previous backup restored with every rule disabled.") + (restored.preservedCurrentFileURL.map { " " + AppLocalization.format("Previous file preserved at %@.", $0.lastPathComponent) } ?? "")
         } catch { errorMessage = AppLocalization.format("Backup restore failed. Review the saved files before retrying: %@", AppLocalization.describe(error)) }
@@ -545,90 +464,28 @@ final class AppModel: ObservableObject {
         do { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true); NSWorkspace.shared.open(directory) }
         catch { errorMessage = AppLocalization.format("Could not open the configuration folder: %@", AppLocalization.describe(error)) }
     }
-    private func execute(_ rule: AutomationRule) {
-        guard hasConfigurationLease else { return }
-        let errors = RuleValidator.validate(rule)
-        guard errors.isEmpty else { appendActivity(rule.name, errors.map { AppLocalization.validationMessage($0) }.joined(separator: " "), false); return }
-        let missing = missingCapabilities(for: rule, automatic: false)
-        guard missing.isEmpty else { appendActivity(rule.name, AppLocalization.format("Skipped: missing %@. No actions were run.", missing.map { AppLocalization.text($0.title) }.joined(separator: ", ")), false); return }
-        guard runningTask == nil else { appendActivity(rule.name, AppLocalization.text("Skipped: another action chain is running."), false); return }
-        executor.allowScripts = configuration.allowScripts
-        executionProgress = nil
-        executor.onProgress = { [weak self] progress in self?.executionProgress = progress }
-        busyRuleID = rule.id
-        isExecuting = true
-        runningTask = Task { [weak self] in
-            guard let self else { return }
-            defer {
-                self.runningTask = nil; self.isExecuting = false; self.busyRuleID = nil
-                self.executor.onProgress = nil
-                self.executionProgress = nil
-                self.runNextPending()
-            }
-            do {
-                let result = try await self.executor.execute(rule.actions)
-                self.appendActivity(rule.name, result, true, progress: self.executionProgress)
-            } catch {
-                self.appendActivity(rule.name, AppLocalization.describe(error), false, progress: self.executionProgress)
-            }
-        }
-    }
-    func stopExecution() {
-        manualActivationTask?.cancel()
-        manualActivationTask = nil
-        manualActivationID = nil
-        if runningTask == nil { isExecuting = false }
-        pendingRules.clear()
-        executor.cancel()
-        runningTask?.cancel()
-    }
-    private var currentExecutionContext: ExecutionContext {
-        let app = NSWorkspace.shared.frontmostApplication
-        return ExecutionContext(processIdentifier: app?.processIdentifier, bundleIdentifier: app?.bundleIdentifier ?? "")
-    }
+    func stopExecution() { coordinator.stop() }
+    private var currentExecutionContext: ExecutionContext { RuleExecutionCoordinator.currentContext }
     private func eligibleForAutomaticExecution(_ context: ExecutionContext) -> Bool {
         hasConfigurationLease && SessionSafety.allowsExecution && RuleScheduler.canAutomaticallyRun(context: context, editorBundleIdentifier: Bundle.main.bundleIdentifier ?? "io.github.pinguarmy.actionflow",
-            automationEnabled: configuration.automationEnabled, isRecording: isRecordingShortcut, isPreparingManualRun: manualActivationTask != nil)
-    }
-    private func enqueue(_ rule: AutomationRule, context: ExecutionContext) {
-        guard eligibleForAutomaticExecution(context), busyRuleID != rule.id else { return }
-        if runningTask == nil { execute(rule) }
-        else { pendingRules.append(rule, context: context, runningRuleID: busyRuleID) }
-    }
-    private func runNextPending() {
-        let context = currentExecutionContext
-        guard eligibleForAutomaticExecution(context) else { pendingRules.clear(); return }
-        if let next = pendingRules.next(rules: configuration.rules, context: context) { execute(next) }
+            automationEnabled: configuration.automationEnabled, isRecording: isRecordingShortcut, isPreparingManualRun: coordinator.isPreparingManualRun)
     }
     func toggleAutomation() { configuration.automationEnabled.toggle(); save() }
     func clearActivity() { activity.removeAll() }
     private func appendActivity(_ name: String, _ message: String, _ success: Bool, progress: ExecutionProgress? = nil) {
-        activity.insert(ActivityEntry(ruleName: name, message: message, success: success, completedActions: progress?.completedActions, totalActions: progress?.actionCount), at: 0)
-        if activity.count > 200 { activity.removeLast(activity.count - 200) }
+        ActivityLog.prepend(ActivityEntry(ruleName: name, message: message, success: success, completedActions: progress?.completedActions, totalActions: progress?.actionCount), to: &activity)
     }
     /// Returns true when the observed key press belongs to an enabled single-press shortcut rule that keeps
     /// it from the active app. Never true unless the input is eligible for automatic execution, so pausing
     /// automation, focusing ActionFlow, recording a shortcut or a locked session always lets keys through.
     @discardableResult
     private func handle(_ event: InputEvent) -> Bool {
-        // Skip the scheduler pass for input no enabled rule can match. Mouse and scroll never affect a
-        // pending double-shortcut pair, and app activation invalidates pairs in the workspace observer.
-        guard triggerInterest.wants(event.kind) else { return false }
-        let context = currentExecutionContext
-        guard eligibleForAutomaticExecution(context) else { return false }
-        let isLifecycle = event.kind == .appLaunched || event.kind == .appTerminated
-        if !isLifecycle && !event.appBundleIdentifier.isEmpty && event.appBundleIdentifier.lowercased() != context.bundleIdentifier { return false }
-        // Independent of cooldown and running state, so holding an owned chord never leaks repeats.
-        let consumes = event.kind == .shortcut && ShortcutInterception.consumes(keyCode: event.keyCode, modifiers: event.modifiers,
-            rules: configuration.rules, bundleIdentifier: context.bundleIdentifier)
-        // Auto-repeat never triggers a rule or affects a pending double press.
-        if event.isRepeat { return consumes }
-        let signal = TriggerSignal(kind: event.kind, keyCode: event.keyCode, modifiers: event.modifiers,
-            mouseButton: event.mouseButton, scrollDirection: event.scrollDirection, appBundleIdentifier: event.appBundleIdentifier)
-        for rule in scheduler.candidates(for: signal, rules: configuration.rules, context: context, now: ProcessInfo.processInfo.systemUptime) {
-            enqueue(rule, context: context)
+        let routed = router.route(event, rules: configuration.rules, currentContext: { self.currentExecutionContext },
+                                  isEligible: { self.eligibleForAutomaticExecution($0) })
+        for rule in routed.candidates {
+            coordinator.enqueue(rule, context: routed.context)
         }
-        return consumes
+        return routed.consumes
     }
     func handleSessionTransition(_ transition: SessionTransition) {
         SessionSafety.noteTransition(transition)
@@ -639,8 +496,8 @@ final class AppModel: ObservableObject {
         previousAutomationEnabled = false
         stopRecordingShortcut()
         stopExecution()
-        monitor.stop()
-        scheduler.reset()
+        router.stopMonitor()
+        router.reset()
         statusMessage = AppLocalization.text("Automation was paused for a sleep or session change. Review your target and resume explicitly when ready.")
         if wasEnabled && !persistenceBlocked {
             do { try writeConfiguration(configuration); lastSavedConfiguration = configuration }
@@ -649,58 +506,41 @@ final class AppModel: ObservableObject {
     }
     private func tick() {
         guard SessionSafety.allowsExecution else {
-            monitor.stop()
-            scheduler.reset()
-            if runningTask != nil || manualActivationTask != nil || pendingRules.count > 0 { stopExecution() }
+            router.stopMonitor()
+            router.reset()
+            if coordinator.hasActiveWork { stopExecution() }
             return
         }
-        if configuration.automationEnabled && permissions.inputMonitoring && triggerInterest.needsInputMonitoring && !monitor.running { configureMonitor() }
+        if configuration.automationEnabled && permissions.inputMonitoring && router.interest.needsInputMonitoring && !router.running { configureMonitor() }
         // Follow Accessibility grants and revocations: an active keyboard tap needs Accessibility, and a
         // revoked grant must fall back to listen-only promptly. A no-op inside start(interest:) when the
         // requested mode is unchanged (for example after macOS refused the active tap).
-        if monitor.running && triggerInterest.contains(.shortcutInterception) && monitor.interceptsShortcuts != AXIsProcessTrusted() { configureMonitor() }
+        if router.running && router.interest.contains(.shortcutInterception) && router.interceptsShortcuts != AXIsProcessTrusted() { configureMonitor() }
         let context = currentExecutionContext
         guard eligibleForAutomaticExecution(context) else { return }
-        for rule in scheduler.intervalCandidates(rules: configuration.rules, context: context, now: ProcessInfo.processInfo.systemUptime) {
-            enqueue(rule, context: context)
+        for rule in router.intervalCandidates(rules: configuration.rules, context: context) {
+            coordinator.enqueue(rule, context: context)
         }
     }
     func startRecordingShortcut() {
         guard !isRecordingShortcut, selection != nil else { return }
         stopExecution()
         isRecordingShortcut = true
-        recorderToken = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
-            var consume = false
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                consume = true
-                guard event.cgEvent?.getIntegerValueField(.eventSourceUserData) != actionFlowEventMarker else { return }
-                if event.keyCode == 53 { self.stopRecordingShortcut(); return }
-                var modifiers: ModifierKeys = []
-                if event.modifierFlags.contains(.command) { modifiers.insert(.command) }
-                if event.modifierFlags.contains(.option) { modifiers.insert(.option) }
-                if event.modifierFlags.contains(.control) { modifiers.insert(.control) }
-                if event.modifierFlags.contains(.shift) { modifiers.insert(.shift) }
-                if let index = self.configuration.rules.firstIndex(where: { $0.id == self.selection }) {
-                    if self.configuration.rules[index].trigger.kind != .doubleShortcut { self.configuration.rules[index].trigger.kind = .shortcut }
-                    self.configuration.rules[index].trigger.keyCode = event.keyCode
-                    self.configuration.rules[index].trigger.modifiers = modifiers
-                }
-                self.stopRecordingShortcut()
-                self.save()
+        recorder.start(onRecorded: { [weak self] keyCode, modifiers in
+            guard let self else { return }
+            if let index = self.configuration.rules.firstIndex(where: { $0.id == self.selection }) {
+                if self.configuration.rules[index].trigger.kind != .doubleShortcut { self.configuration.rules[index].trigger.kind = .shortcut }
+                self.configuration.rules[index].trigger.keyCode = keyCode
+                self.configuration.rules[index].trigger.modifiers = modifiers
             }
-            return consume ? nil : event
-        }
-        recordingTimeout = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 15_000_000_000)
-            if !Task.isCancelled { self?.stopRecordingShortcut() }
-        }
+            self.stopRecordingShortcut()
+            self.save()
+        }, onEnd: { [weak self] in
+            self?.stopRecordingShortcut()
+        })
     }
     func stopRecordingShortcut() {
-        if let token = recorderToken { NSEvent.removeMonitor(token) }
-        recorderToken = nil
-        recordingTimeout?.cancel()
-        recordingTimeout = nil
+        recorder.stop()
         isRecordingShortcut = false
     }
     func importRules() {
@@ -742,16 +582,11 @@ final class AppModel: ObservableObject {
         autosaveTask?.cancel()
         autosaveTask = nil
         if hasConfigurationLease && !persistenceBlocked && hasUnsavedChanges { save() }
-        if let token = terminationObserver { NotificationCenter.default.removeObserver(token) }
-        terminationObserver = nil
+        systemEvents.stopObservingTermination()
         stopRecordingShortcut()
         stopExecution()
-        monitor.stop()
-        timer?.invalidate()
-        if let token = workspaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(token) }
-        workspaceObserver = nil
-        for token in lifecycleObservers { NSWorkspace.shared.notificationCenter.removeObserver(token) }
-        lifecycleObservers.removeAll()
+        router.stopMonitor()
+        systemEvents.invalidate()
         configurationLease?.release()
         configurationLease = nil
     }
