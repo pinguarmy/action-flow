@@ -21,7 +21,8 @@
         "mouseButton": 2,
         "scrollDirection": "up",
         "intervalSeconds": 60,
-        "appBundleIdentifier": ""
+        "appBundleIdentifier": "",
+        "passThrough": false
       },
       "actions": [
         {

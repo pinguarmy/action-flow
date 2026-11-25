@@ -13,7 +13,7 @@ enum AppLocalization {
 
     /// The table value for `key`, or nil when the key is not in the table.
     static func lookup(_ key: String) -> String? {
-        let bundle = languageBundle() ?? Bundle.main
+        let bundle = resolvedBundle ?? Bundle.main
         let value = bundle.localizedString(forKey: key, value: missingValue, table: "Localizable")
         return value == missingValue ? nil : value
     }
@@ -100,9 +100,12 @@ enum AppLocalization {
         return ["en", "zh-Hans"].contains(value ?? "") ? value : nil
     }
     static func text(_ key: String) -> String {
-        if let bundle = languageBundle() { return bundle.localizedString(forKey: key, value: key, table: "Localizable") }
+        if let bundle = resolvedBundle { return bundle.localizedString(forKey: key, value: key, table: "Localizable") }
         return Bundle.main.localizedString(forKey: key, value: key, table: "Localizable")
     }
+    /// Resolved once: the interface language and the test overrides are fixed for the life of the
+    /// process, and views look strings up hundreds of times per render.
+    private static let resolvedBundle: Bundle? = languageBundle()
     private static func languageBundle() -> Bundle? {
         let language = forcedLanguage ?? (Locale.preferredLanguages.first?.hasPrefix("zh") == true ? "zh-Hans" : "en")
         if let path = Bundle.main.path(forResource: language, ofType: "lproj"), let bundle = Bundle(path: path) { return bundle }

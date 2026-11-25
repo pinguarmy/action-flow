@@ -35,6 +35,7 @@
         "kind" : "shortcut",
         "modifiers" : 786432,
         "mouseButton" : 2,
+        "passThrough" : false,
         "scrollDirection" : "up"
       }
     }

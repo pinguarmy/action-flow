@@ -9,6 +9,7 @@ if [[ -z "${CLI_BIN:-}" ]]; then
 fi
 [[ -x "$CLI_BIN" ]] || { printf 'CLI binary is not executable: %s\n' "$CLI_BIN" >&2; exit 1; }
 export CLI_BIN
+export ROOT
 python3 - <<'PY'
 import concurrent.futures
 import hashlib
@@ -21,6 +22,19 @@ import tempfile
 
 binary = str(Path(os.environ['CLI_BIN']).resolve(strict=True))
 assertions = 0
+repo = Path(os.environ['ROOT']).resolve(strict=True)
+
+def matches_example(generated, relative, label):
+    """Committed examples must be exactly what the CLI writes, so they never drift from the model."""
+    expected = (repo / relative).read_bytes()
+    actual = generated.read_bytes()
+    if actual != expected:
+        import difflib
+        diff = difflib.unified_diff(expected.decode().splitlines(), actual.decode().splitlines(),
+                                    relative, 'actionflow-cli output', lineterm='', n=1)
+        # A workflow annotation keeps the first differing lines visible in the run summary.
+        print('::error title=Example drift::' + relative + ' differs from CLI output: ' + ' | '.join(list(diff)[:14]))
+    check(actual == expected, label)
 
 def check(value, label):
     global assertions
@@ -48,6 +62,8 @@ with tempfile.TemporaryDirectory(prefix='actionflow-cli-checks-') as temporary:
     invoke('validate', code=2)
     invoke('example', fixture, 'extra', code=2)
     created = json.loads(invoke('example', fixture).stdout)
+    matches_example(fixture, 'examples/window-basics.json', 'examples/window-basics.json matches the CLI example')
+    check(json.loads(invoke('validate', repo / 'examples/menu-command.json').stdout)['valid'], 'examples/menu-command.json validates')
     check(created['created'] and created['rulesDisabled'], 'example reports safe creation')
     config = json.loads(fixture.read_text())
     check(not config['automationEnabled'] and not config['allowScripts'] and not config['launchAtLogin'], 'all example execution opt-ins disabled')
@@ -213,6 +229,7 @@ with tempfile.TemporaryDirectory(prefix='actionflow-cli-checks-') as temporary:
         check(json.loads(invoke('validate', first).stdout)['valid'], 'exported template validates for ' + item['id'])
         template_plan = json.loads(invoke('plan', first).stdout)
         check(all(not rule['plan']['validationErrors'] for rule in template_plan['rules']), 'template plan has no errors for ' + item['id'])
+        matches_example(first, 'examples/templates/' + item['id'] + '.json', 'examples/templates matches the CLI export for ' + item['id'])
         exported.append(first)
     kept = exported[0].read_bytes()
     invoke('template', ids[0], exported[0], code=1)
