@@ -357,6 +357,39 @@ struct AppChecks {
                   && (try? Data(contentsOf: policyBackupURL)) == bytesAfterSecondPolicySave,
                   "adding a template rotates the backup to the bytes just before it")
             policyModel.shutdown()
+            // Conflicts per rule and the first-run checklist. Dedicated model and file.
+            UserDefaults.standard.removeObject(forKey: GettingStartedCard.dismissedKey)
+            let conflictURL = dir.appendingPathComponent("conflicts.json")
+            let conflictModel = AppModel(configurationURL: conflictURL)
+            conflictModel.errorMessage = nil
+            let conflictDelay = [AutomationAction(kind: .delay, delaySeconds: 0)]
+            let conflictA = AutomationRule(name: "Conflict A", enabled: true, trigger: Trigger(keyCode: 123, modifiers: [.control, .option]), actions: conflictDelay)
+            let conflictB = AutomationRule(name: "", enabled: true, trigger: Trigger(keyCode: 123, modifiers: [.control, .option]), actions: conflictDelay)
+            let conflictC = AutomationRule(name: "Conflict C", enabled: true, trigger: Trigger(keyCode: 124, modifiers: [.control, .option]), actions: conflictDelay)
+            conflictModel.configuration.rules = [conflictA, conflictB, conflictC]
+            check(conflictModel.conflictingRuleIDs == [conflictA.id, conflictB.id], "two enabled rules sharing a shortcut are both conflicting")
+            check(conflictModel.conflicts(involving: conflictA.id).count == 1 && conflictModel.conflicts(involving: conflictB.id).count == 1,
+                  "each conflicting rule sees exactly one conflict")
+            check(conflictModel.conflicts(involving: conflictC.id).isEmpty, "a rule with a different trigger has no conflicts")
+            check(conflictModel.conflictMessages.count == 1, "the global conflict message list still has one entry")
+            conflictModel.setRule(conflictB.id, enabled: false)
+            check(conflictModel.conflictingRuleIDs.isEmpty && conflictModel.conflictMessages.isEmpty, "disabling one rule clears the conflict")
+            // The checklist is visible for a fresh model (no permissions in CI, automation paused) and renders.
+            let onboardingLocale = Locale(identifier: AppLocalization.forcedLanguage ?? "en")
+            check(GettingStartedCard.isVisible(model: conflictModel, dismissed: false) && !GettingStartedCard.isVisible(model: conflictModel, dismissed: true),
+                  "the getting started card is visible until dismissed")
+            let onboardingHost = NSHostingView(rootView: GettingStartedCard().environmentObject(conflictModel).environment(\.locale, onboardingLocale).frame(width: 285))
+            onboardingHost.frame = NSRect(x: 0, y: 0, width: 285, height: 420)
+            onboardingHost.layoutSubtreeIfNeeded()
+            if let onboardingBitmap = onboardingHost.bitmapImageRepForCachingDisplay(in: onboardingHost.bounds) {
+                onboardingHost.cacheDisplay(in: onboardingHost.bounds, to: onboardingBitmap)
+                check(onboardingBitmap.pixelsWide > 0, "getting started card renders offscreen")
+                if let path = ProcessInfo.processInfo.environment["ACTIONFLOW_ONBOARDING_IMAGE"], let data = onboardingBitmap.representation(using: .png, properties: [:]) {
+                    try data.write(to: URL(fileURLWithPath: path))
+                }
+            } else { check(false, "getting started card bitmap is available") }
+            conflictModel.shutdown()
+            UserDefaults.standard.removeObject(forKey: GettingStartedCard.dismissedKey)
             model.configuration.rules = AutomationRule.exampleRules
             model.selection = model.configuration.rules.first?.id
             model.statusMessage = nil

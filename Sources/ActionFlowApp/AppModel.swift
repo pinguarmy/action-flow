@@ -50,7 +50,7 @@ final class AppModel: ObservableObject {
         didSet { if unsavedIssueCount != 0 { unsavedIssueCount = 0 } }
     }
     private var autosaveTask: Task<Void, Never>?
-    private var conflictCache: (rules: [AutomationRule], messages: [String])?
+    private var conflictCache: (rules: [AutomationRule], pairs: [RuleConflict], ruleIDs: Set<UUID>)?
     private var backupRotation = BackupRotationPolicy()
 
     init(configurationURL: URL? = nil) {
@@ -141,15 +141,32 @@ final class AppModel: ObservableObject {
         ruleGroupFilter = nil
         reconcileRuleSelection()
     }
+    /// Views read the conflicts on every render. Recompute only when the rules change.
+    private var conflictPairs: [RuleConflict] {
+        refreshConflictCache().pairs
+    }
+    private func refreshConflictCache() -> (pairs: [RuleConflict], ruleIDs: Set<UUID>) {
+        if let cache = conflictCache, cache.rules == configuration.rules { return (cache.pairs, cache.ruleIDs) }
+        let pairs = RuleValidator.conflictPairs(in: configuration.rules)
+        var ids = Set<UUID>()
+        for pair in pairs { ids.insert(pair.first.id); ids.insert(pair.second.id) }
+        conflictCache = (rules: configuration.rules, pairs: pairs, ruleIDs: ids)
+        return (pairs, ids)
+    }
     var conflictMessages: [String] {
-        // Views read this on every render. Recompute only when the rules change (locale is fixed at launch).
-        if let cache = conflictCache, cache.rules == configuration.rules { return cache.messages }
-        let messages = RuleValidator.conflictPairs(in: configuration.rules).map { conflict in
+        // Locale is fixed at launch, so the pair cache is enough.
+        conflictPairs.map { conflict in
             AppLocalization.format("\"%@\" and \"%@\" share %@ in overlapping apps.",
                                    conflict.first.name, conflict.second.name, conflict.first.trigger.localizedSummary)
         }
-        conflictCache = (rules: configuration.rules, messages: messages)
-        return messages
+    }
+    /// Conflicts among enabled rules that involve the given rule, in validator order.
+    func conflicts(involving ruleID: UUID) -> [RuleConflict] {
+        conflictPairs.filter { $0.first.id == ruleID || $0.second.id == ruleID }
+    }
+    /// Read once per rule row on every render, so it is cached with the pairs.
+    var conflictingRuleIDs: Set<UUID> {
+        refreshConflictCache().ruleIDs
     }
     /// True when edits exist that are not on disk yet. False when nothing was ever loaded or saved
     /// (that state has its own banner and alert handling).

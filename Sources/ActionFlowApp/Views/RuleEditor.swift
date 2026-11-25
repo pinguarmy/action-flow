@@ -7,6 +7,7 @@ struct RuleEditor: View {
     let onDuplicate: () -> Void
     let onDelete: () -> Void
     @State private var showAdvanced = false
+    @State private var showConflicts = true
     @State private var confirmRun = false
     @State private var showPreview = false
     @State private var previewPlan: ExecutionPlan?
@@ -17,6 +18,45 @@ struct RuleEditor: View {
     private var missingAutomaticCapabilities: [AutomationCapability] { model.missingCapabilities(for: rule, automatic: true) }
     private var missingManualCapabilities: [AutomationCapability] { model.missingCapabilities(for: rule, automatic: false) }
     private var missingManualSummary: String { missingManualCapabilities.map { AppLocalization.text($0.title) }.joined(separator: ", ") }
+
+    private var ruleConflicts: [RuleConflict] { model.conflicts(involving: rule.id) }
+
+    private func otherRule(in conflict: RuleConflict) -> AutomationRule {
+        conflict.first.id == rule.id ? conflict.second : conflict.first
+    }
+
+    private func showRule(_ other: AutomationRule) {
+        if !model.filteredRules.contains(where: { $0.id == other.id }) { model.clearRuleFilters() }
+        model.selection = other.id
+    }
+
+    private func conflictRow(_ other: AutomationRule) -> some View {
+        let name = other.name.isEmpty ? AppLocalization.text("Untitled rule") : other.name
+        let message = AppLocalization.format("Shares %@ with “%@” in overlapping apps.", rule.trigger.localizedSummary, name)
+        return HStack(alignment: .firstTextBaseline, spacing: 8) {
+            ForgeNote(text: message, symbol: "exclamationmark.triangle", warning: true, localizesText: false)
+            Button("Show") { showRule(other) }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .accessibilityLabel(AppLocalization.format("Show rule %@", name))
+        }
+        .padding(.vertical, 3)
+    }
+
+    private var conflictsDisclosure: some View {
+        DisclosureGroup(isExpanded: $showConflicts) {
+            ForgePanel {
+                ForEach(ruleConflicts.map { otherRule(in: $0) }, id: \.id) { other in
+                    conflictRow(other)
+                }
+            }
+            .padding(.top, 6)
+        } label: {
+            Label("Potential rule conflicts", systemImage: "exclamationmark.triangle")
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.orange)
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -46,18 +86,9 @@ struct RuleEditor: View {
                         messagePanel(title: "Review before running", messages: errors, warning: true)
                             .padding(.top, 22)
                     }
-                    if !model.conflictMessages.isEmpty {
-                        DisclosureGroup {
-                            ForEach(Array(model.conflictMessages.enumerated()), id: \.offset) { _, message in
-                                ForgeNote(text: message, symbol: "exclamationmark.triangle", warning: true, localizesText: false)
-                                    .padding(.vertical, 3)
-                            }
-                        } label: {
-                            Label("Potential rule conflicts", systemImage: "exclamationmark.triangle")
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.orange)
-                        }
-                        .padding(.top, 20)
+                    if !ruleConflicts.isEmpty {
+                        conflictsDisclosure
+                            .padding(.top, 20)
                     }
                     DisclosureGroup("Advanced", isExpanded: $showAdvanced) {
                         ForgePanel {

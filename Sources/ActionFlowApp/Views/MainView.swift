@@ -6,6 +6,7 @@ struct MainView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var pendingDeletion: AutomationRule?
     @State private var showTemplateLibrary = false
+    @AppStorage(GettingStartedCard.dismissedKey) private var gettingStartedDismissed = false
 
     private var hasActiveRuleFilters: Bool {
         !model.searchText.isEmpty || model.ruleStatusFilter != .all || model.ruleGroupFilter != nil
@@ -29,7 +30,8 @@ struct MainView: View {
                 if !model.hasConfigurationLease {
                     configurationOwnershipBanner
                 }
-                if !model.permissions.accessibility || !model.permissions.inputMonitoring {
+                if (!model.permissions.accessibility || !model.permissions.inputMonitoring)
+                    && !GettingStartedCard.isVisible(model: model, dismissed: gettingStartedDismissed) {
                     permissionBanner
                 }
                 switch model.section {
@@ -233,6 +235,9 @@ struct MainView: View {
     private var ruleWorkspace: some View {
         HSplitView {
             VStack(spacing: 0) {
+                GettingStartedCard()
+                    .padding(.horizontal, 12)
+                    .padding(.top, 12)
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .firstTextBaseline) {
                         Text("Rules").font(.title2.weight(.semibold))
@@ -388,7 +393,8 @@ struct MainView: View {
         return RuleListRow(rule: rule,
                            isEnabled: isEnabled,
                            canToggle: model.hasConfigurationLease && !blockedByValidation,
-                           blockedByValidation: blockedByValidation)
+                           blockedByValidation: blockedByValidation,
+                           hasConflict: model.conflictingRuleIDs.contains(rule.id))
     }
 
     private func ruleBinding(_ fallback: AutomationRule) -> Binding<AutomationRule> {
@@ -408,6 +414,14 @@ private struct RuleListRow: View {
     let isEnabled: Binding<Bool>
     let canToggle: Bool
     let blockedByValidation: Bool
+    var hasConflict = false
+
+    private static let conflictHelp = "Shares its trigger with another enabled rule"
+
+    private var accessibilitySummary: String {
+        let base = AppLocalization.format("%@, %@, %@, %lld actions", rule.name, AppLocalization.text(rule.enabled ? "enabled" : "disabled"), rule.trigger.localizedSummary, Int64(rule.actions.count))
+        return hasConflict ? base + ", " + AppLocalization.text(Self.conflictHelp) : base
+    }
 
     private var displayName: String {
         rule.name.isEmpty ? AppLocalization.text("Untitled rule") : rule.name
@@ -416,6 +430,14 @@ private struct RuleListRow: View {
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
             details
+            if hasConflict {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .help(AppLocalization.text(Self.conflictHelp))
+                    // The row's combined accessibility label already announces the conflict.
+                    .accessibilityHidden(true)
+            }
             // A separate accessible control: the combined text element above must not swallow it.
             Toggle(AppLocalization.format("Enable %@", displayName), isOn: isEnabled)
                 .toggleStyle(.switch)
@@ -456,6 +478,6 @@ private struct RuleListRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(AppLocalization.format("%@, %@, %@, %lld actions", rule.name, AppLocalization.text(rule.enabled ? "enabled" : "disabled"), rule.trigger.localizedSummary, Int64(rule.actions.count)))
+        .accessibilityLabel(accessibilitySummary)
     }
 }
