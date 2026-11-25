@@ -1,0 +1,198 @@
+name: Release
+# Tag pushes (v*) build, verify and create a DRAFT GitHub release. Branch pushes that touch
+# release-relevant files, and manual runs, do the same work as a dry run: artifacts only, no
+# release, tag or other repository write. The maintainer publishes drafts by hand.
+on:
+  push:
+    # With both filters, a branch push needs a matching branch AND a matching path; a tag push
+    # is matched by `tags` and (per GitHub's documented behavior) is not subject to `paths`.
+    branches:
+      - '**'
+    tags:
+      - 'v*'
+    paths:
+      - '.github/workflows/release.yml'
+      - 'scripts/package-release.sh'
+      - 'scripts/make-dmg.sh'
+      - 'scripts/build-app.sh'
+      - 'scripts/zip-app.py'
+      - 'scripts/check-bundle.sh'
+      - 'scripts/release-env.sh'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  package:
+    runs-on: macos-15
+    outputs:
+      mode: ${{ steps.vars.outputs.RELEASE_MODE }}
+      tag: ${{ steps.vars.outputs.RELEASE_TAG }}
+      version: ${{ steps.vars.outputs.APP_VERSION }}
+      suffix: ${{ steps.vars.outputs.RELEASE_SUFFIX }}
+      name: ${{ steps.vars.outputs.RELEASE_NAME }}
+      cli: ${{ steps.vars.outputs.RELEASE_CLI }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The build number is the commit count, which is wrong in a shallow clone.
+          fetch-depth: 0
+      - name: Derive version, suffix and build number
+        id: vars
+        env:
+          RELEASE_EVENT: ${{ github.event_name }}
+          RELEASE_REF_TYPE: ${{ github.ref_type }}
+          RELEASE_REF_NAME: ${{ github.ref_name }}
+          RELEASE_RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          bash scripts/release-env.sh > "$RUNNER_TEMP/release-env.txt"
+          cat "$RUNNER_TEMP/release-env.txt"
+          cat "$RUNNER_TEMP/release-env.txt" >> "$GITHUB_ENV"
+          cat "$RUNNER_TEMP/release-env.txt" >> "$GITHUB_OUTPUT"
+      - name: Toolchain
+        run: swift --version
+      - name: Unit tests
+        run: swift test
+      - name: Core behavior harness
+        run: swift run ActionFlowChecks
+      - name: Offline CLI checks
+        run: bash scripts/check-cli.sh
+      - name: Localization resource checks
+        run: python3 scripts/check-localization.py
+      # The offscreen rendering checks (scripts/check-app.sh) are skipped here: build.yml
+      # already runs them on both architectures for every push.
+      - name: Runtime checks without desktop actions
+        run: bash scripts/check-runtime.sh
+      - name: Package both architectures
+        # APP_VERSION, APP_BUILD, RELEASE_SUFFIX and RELEASE_FINAL come from the derive step.
+        run: bash scripts/package-release.sh
+      - name: Verify built localization resources
+        run: python3 scripts/check-localization.py dist/ActionFlow.app
+      - name: Check release privacy
+        run: python3 scripts/check-release-privacy.py
+      - name: List release files
+        run: ls -l dist
+      - name: Upload release files
+        uses: actions/upload-artifact@v4
+        with:
+          name: ActionFlow-release-files
+          if-no-files-found: error
+          path: |
+            dist/${{ env.RELEASE_NAME }}-macos-arm64.zip
+            dist/${{ env.RELEASE_NAME }}-macos-arm64.dmg
+            dist/${{ env.RELEASE_NAME }}-macos-arm64.dmg.sha256
+            dist/${{ env.RELEASE_NAME }}-macos-x86_64.zip
+            dist/${{ env.RELEASE_NAME }}-macos-x86_64.dmg
+            dist/${{ env.RELEASE_NAME }}-macos-x86_64.dmg.sha256
+            dist/${{ env.RELEASE_CLI }}-macos-arm64
+            dist/${{ env.RELEASE_CLI }}-macos-x86_64
+            dist/${{ env.RELEASE_NAME }}-extra.sha256
+  verify:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            architecture: arm64
+          - runner: macos-15-intel
+            architecture: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      # Checkout supplies scripts/ and examples/ only.
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ActionFlow-release-files
+          path: ${{ runner.temp }}/release-files
+      - name: Verify checksums
+        env:
+          FILES: ${{ runner.temp }}/release-files
+        run: |
+          set -euo pipefail
+          cd "$FILES"
+          ls -l
+          COUNT=0
+          for SHA in *.sha256; do
+            shasum -a 256 -c "$SHA"
+            COUNT=$((COUNT + 1))
+          done
+          [[ "$COUNT" -eq 3 ]] || { printf 'Expected 3 .sha256 files, found %s\n' "$COUNT" >&2; exit 1; }
+      - name: Verify disk image
+        env:
+          FILES: ${{ runner.temp }}/release-files
+          NAME: ${{ needs.package.outputs.name }}
+          ARCH: ${{ matrix.architecture }}
+        run: |
+          set -euo pipefail
+          hdiutil verify "$FILES/$NAME-macos-$ARCH.dmg"
+      - name: Verify app in ZIP
+        env:
+          FILES: ${{ runner.temp }}/release-files
+          NAME: ${{ needs.package.outputs.name }}
+          ARCH: ${{ matrix.architecture }}
+        run: |
+          set -euo pipefail
+          EXTRACT="$(mktemp -d "$RUNNER_TEMP/extract.XXXXXX")"
+          ditto -x -k "$FILES/$NAME-macos-$ARCH.zip" "$EXTRACT"
+          EXPECTED_ARCH="$ARCH" bash scripts/check-bundle.sh "$EXTRACT/ActionFlow.app"
+      - name: Run CLI natively
+        env:
+          FILES: ${{ runner.temp }}/release-files
+          CLI_NAME: ${{ needs.package.outputs.cli }}
+          ARCH: ${{ matrix.architecture }}
+        run: |
+          set -euo pipefail
+          # Artifact upload does not keep the executable bit.
+          CLI="$FILES/$CLI_NAME-macos-$ARCH"
+          chmod +x "$CLI"
+          [[ "$(uname -m)" == "$ARCH" ]] || { printf 'Runner is %s, expected %s\n' "$(uname -m)" "$ARCH" >&2; exit 1; }
+          [[ "$(lipo -archs "$CLI")" == "$ARCH" ]] || { printf 'CLI architecture mismatch\n' >&2; exit 1; }
+          "$CLI" help > /dev/null
+          "$CLI" validate examples/window-basics.json > "$RUNNER_TEMP/validate.json"
+          python3 -c 'import json, sys; assert json.load(open(sys.argv[1]))["valid"] is True' "$RUNNER_TEMP/validate.json"
+          cat "$RUNNER_TEMP/validate.json"
+  release:
+    # Tag pushes only; dry runs never reach this job.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [package, verify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # Checkout supplies RELEASE_NOTES.md and the repository context for gh.
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ActionFlow-release-files
+          path: ${{ runner.temp }}/release-files
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.package.outputs.tag }}
+          VERSION: ${{ needs.package.outputs.version }}
+          SUFFIX: ${{ needs.package.outputs.suffix }}
+          NAME: ${{ needs.package.outputs.name }}
+          CLI_NAME: ${{ needs.package.outputs.cli }}
+          FILES: ${{ runner.temp }}/release-files
+        run: |
+          set -euo pipefail
+          [[ -n "$TAG" && "$TAG" == "$GITHUB_REF_NAME" ]] || { printf 'Tag mismatch between package job and ref\n' >&2; exit 1; }
+          # Drafts are invisible to the tag endpoint, so list all releases and match the tag name.
+          EXISTING="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq '.[] | select(.tag_name == env.TAG) | .html_url')"
+          [[ -z "$EXISTING" ]] || { printf 'A release for %s already exists, refusing to modify it:\n%s\n' "$TAG" "$EXISTING" >&2; exit 1; }
+          ASSETS=()
+          for A in arm64 x86_64; do
+            for F in "$NAME-macos-$A.zip" "$NAME-macos-$A.dmg" "$NAME-macos-$A.dmg.sha256" "$CLI_NAME-macos-$A"; do
+              [[ -f "$FILES/$F" ]] || { printf 'Missing release file: %s\n' "$F" >&2; exit 1; }
+              ASSETS+=("$FILES/$F")
+            done
+          done
+          [[ -f "$FILES/$NAME-extra.sha256" ]] || { printf 'Missing release file: %s-extra.sha256\n' "$NAME" >&2; exit 1; }
+          ASSETS+=("$FILES/$NAME-extra.sha256")
+          FLAGS=(--verify-tag --draft)
+          if [[ -n "$SUFFIX" ]]; then FLAGS+=(--prerelease); fi
+          gh release create "$TAG" "${FLAGS[@]}" --title "ActionFlow $VERSION$SUFFIX" --notes-file RELEASE_NOTES.md "${ASSETS[@]}"

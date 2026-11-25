@@ -5,6 +5,9 @@
 # the app or CLI, and never grants permissions or uploads anything.
 # Required env: APP_BUILD (positive integer), RELEASE_SUFFIX (for example -alpha.6).
 # Optional env: APP_VERSION (default 0.1.0, numeric x.y.z).
+# RELEASE_FINAL=1 is the only way to package without a suffix (a final release); it must be set
+# explicitly and cannot be combined with RELEASE_SUFFIX. Without it an empty suffix is refused.
+# Also driven by .github/workflows/release.yml, which runs it on a macos-15 arm64 runner.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DIST="$ROOT/dist"
@@ -13,7 +16,13 @@ BUILD="${APP_BUILD:-}"
 SUFFIX="${RELEASE_SUFFIX:-}"
 [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { printf 'APP_VERSION must be numeric x.y.z\n' >&2; exit 2; }
 [[ -n "$BUILD" && "$BUILD" =~ ^[1-9][0-9]*$ ]] || { printf 'APP_BUILD is required and must be a positive integer\n' >&2; exit 2; }
-[[ -n "$SUFFIX" && "$SUFFIX" =~ ^-[A-Za-z0-9]+([.-][A-Za-z0-9]+)*$ ]] || { printf 'RELEASE_SUFFIX is required, for example -alpha.6\n' >&2; exit 2; }
+FINAL="${RELEASE_FINAL:-}"
+[[ -z "$FINAL" || "$FINAL" == 0 || "$FINAL" == 1 ]] || { printf 'RELEASE_FINAL must be 1 (final release) or unset\n' >&2; exit 2; }
+if [[ "$FINAL" == 1 ]]; then
+ [[ -z "$SUFFIX" ]] || { printf 'RELEASE_FINAL=1 cannot be combined with RELEASE_SUFFIX\n' >&2; exit 2; }
+else
+ [[ -n "$SUFFIX" && "$SUFFIX" =~ ^-[A-Za-z0-9]+([.-][A-Za-z0-9]+)*$ ]] || { printf 'RELEASE_SUFFIX is required, for example -alpha.6 (set RELEASE_FINAL=1 for a final release without suffix)\n' >&2; exit 2; }
+fi
 # Native arm64 build comes first, so the host must be Apple Silicon. Intel is cross-built.
 [[ "$(uname -m)" == arm64 ]] || { printf 'Unsupported host architecture: only arm64 Apple Silicon hosts can run this packaging order\n' >&2; exit 2; }
 NAME="ActionFlow-$VERSION$SUFFIX"
